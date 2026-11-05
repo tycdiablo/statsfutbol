@@ -38,40 +38,45 @@ Notas libres con colores, etiquetas, fijadas y buscador.
 
 ## Probarla en tu compu
 
-No necesita instalar nada. Desde la carpeta del proyecto:
+No necesita instalar nada. Desde la carpeta `app/`:
 
 ```bash
+cd app
 python3 -m http.server 8080
 ```
 
 y abrí http://localhost:8080
 
-## Publicarla gratis (GitHub Pages)
+## Publicación (Netlify)
 
-1. En GitHub: **Settings → Pages → Build and deployment → Deploy from a branch**.
-2. Elegí la rama y la carpeta `/ (root)` y guardá.
-3. En un minuto queda en `https://TU_USUARIO.github.io/statsfutbol/`.
+La app está publicada en **https://statsfutbol.netlify.app**. Netlify publica la carpeta `app/` (configurado en `netlify.toml`); no hay que compilar nada.
 
 ## Activar el inicio con Google
 
 1. Entrá a https://console.firebase.google.com y creá un proyecto (gratis).
-2. **Agregar app → Web**, copiá el objeto `firebaseConfig` y pegalo en `js/config.js`.
+2. **Agregar app → Web**, copiá el objeto `firebaseConfig` y pegalo en `app/js/config.js`.
 3. **Authentication → Sign-in method →** activá **Google**.
-4. **Authentication → Settings → Authorized domains →** agregá tu dominio (ej. `tuusuario.github.io`). `localhost` ya viene autorizado.
+4. **Authentication → Settings → Authorized domains →** agregá tu dominio (`statsfutbol.netlify.app`). `localhost` ya viene autorizado.
 5. **Firestore Database → Crear base de datos**, y en **Reglas** pegá el contenido de `firestore.rules` (cada usuario solo puede ver sus propios datos).
 
-Listo: aparece “Continuar con Google” funcionando. Si `js/config.js` queda vacío, la app anda igual en modo sin cuenta.
+Listo: aparece “Continuar con Google” funcionando. Si `app/js/config.js` queda vacío, la app anda igual en modo sin cuenta.
 
 ## Estructura
 
 ```
-index.html            app shell
-css/styles.css        estilos (mobile-first, claro/oscuro)
-js/app.js             router, sincronización, bienvenida
-js/store.js           datos locales + merge con la nube
-js/cloud.js           Firebase (Auth + Firestore)
-js/stats.js           cálculos: totales, tabla, simulación, logros
-js/forms.js           formularios (partido, equipo, torneo, perfil…)
-js/views/*            pantallas
-sw.js                 modo offline
+netlify.toml              configuración de Netlify (publica app/)
+firestore.rules           reglas de seguridad para Firebase
+app/                      ← la web completa
+  index.html              app shell
+  manifest.webmanifest    datos para instalarla como app
+  sw.js                   modo offline
+  css/styles.css          estilos (mobile-first, claro/oscuro)
+  icons/                  íconos de la app
+  js/app.js               router, sincronización, bienvenida
+  js/config.js            ← acá va la config de Firebase
+  js/store.js             datos locales + merge con la nube
+  js/cloud.js             Firebase (Auth + Firestore)
+  js/stats.js             cálculos: totales, tabla, simulación, logros
+  js/forms.js             formularios (partido, equipo, torneo, perfil…)
+  js/views/               pantallas (inicio, partidos, torneos, carrera, notas, ajustes)
 ```
