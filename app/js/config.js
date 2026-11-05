@@ -12,10 +12,11 @@
 //  en el dispositivo.
 // ─────────────────────────────────────────────────────────────
 export const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyAFX_tj6_EJ0tWemM8VJpNGD7imhQ9M6pE',
+  authDomain: 'statsfutbol-26ea7.firebaseapp.com',
+  projectId: 'statsfutbol-26ea7',
+  storageBucket: 'statsfutbol-26ea7.firebasestorage.app',
+  messagingSenderId: '386282711783',
+  appId: '1:386282711783:web:ed7bc7f9a00eb525f95042',
+  measurementId: 'G-5CXZG47V14',
 };
