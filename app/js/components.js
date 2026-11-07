@@ -55,6 +55,7 @@ export function matchCard(m, { compact = false } = {}) {
       ${statusChip(m)}
       ${m.official === false ? '<span class="chip">No oficial</span>' : '<span class="chip chip-off">Oficial</span>'}
       ${!mine ? '<span class="chip">De otros</span>' : ''}
+      ${m.countsForTable === false ? '<span class="chip nc">No cuenta en la tabla</span>' : ''}
       <span class="mc-date">${m.date ? fmtDate(m.date) : 'Sin fecha'}</span>
     </div>
     <div class="mc-body">

@@ -1,5 +1,5 @@
 // Offline support: app shell cached, network-first for code so updates arrive quickly.
-const CACHE = 'statsfutbol-v9';
+const CACHE = 'statsfutbol-v10';
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/store.js', 'js/cloud.js', 'js/config.js', 'js/util.js', 'js/icons.js', 'js/ui.js', 'js/stats.js',

@@ -80,6 +80,7 @@ export function generateTourFixture(tour) {
       pairs.forEach(([h, a]) => out.push(fixtureMatch(tour, h, a, String(i + 1)))));
   }
   store.upsertMany('matches', out);
+  syncPlayoffs(tour);
   return out.length;
 }
 
@@ -179,9 +180,22 @@ function winnerId(m) {
   return o.winner === 'home' ? m.homeId : o.winner === 'away' ? m.awayId : '';
 }
 
-// Completa los equipos de las rondas siguientes y marca "mis" partidos
+// Completa los equipos de las rondas (por textos de grupo y por ganadores) y marca "mis" partidos
 export function materialize(tourId) {
   const tour = store.find('tournaments', tourId);
+  const all = store.list('matches');
+  // textos "1° Grupo A": cuando termina la fase regular se reemplazan por los equipos reales
+  if (tour && tour.playoff && !pendingStage(tour, all)) {
+    const seeds = playoffSeeds(tour, all);
+    const labels = seedLabels(tour, all);
+    const map = Object.fromEntries(labels.slice(0, seeds.length).map((l, i) => [l, seeds[i]]));
+    for (const m of all.filter((x) => x.tournamentId === tourId && x.stage === 'playoff')) {
+      const patch = {};
+      if (!m.homeId && m.homeLabel && map[m.homeLabel]) patch.homeId = map[m.homeLabel];
+      if (!m.awayId && m.awayLabel && map[m.awayLabel]) patch.awayId = map[m.awayLabel];
+      if (Object.keys(patch).length) store.upsert('matches', { id: m.id, ...patch });
+    }
+  }
   const po = store.list('matches').filter((m) => m.tournamentId === tourId && m.stage === 'playoff')
     .sort((a, b) => a.playoffRound - b.playoffRound);
   for (const m of po) {
@@ -196,6 +210,73 @@ export function materialize(tourId) {
     const want = mine ? { played: true, myTeam: m0.homeId === tour.myTeamId ? 'home' : 'away' } : { played: false, myTeam: '' };
     if (m0.played !== want.played || m0.myTeam !== want.myTeam) store.upsert('matches', { id: m0.id, ...want });
   }
+}
+
+// Crea o rehace la estructura de playoffs según la configuración actual.
+// No toca playoffs que ya tienen partidos jugados.
+export function syncPlayoffs(tour) {
+  const all = store.list('matches');
+  const po = all.filter((m) => m.tournamentId === tour.id && m.stage === 'playoff');
+  if (!tour.playoff) {
+    if (!po.some((m) => m.status === 'finished')) store.removeWhere('matches', (m) => m.tournamentId === tour.id && m.stage === 'playoff');
+    return;
+  }
+  const labels = seedLabels(tour, all);
+  if (labels.length < 2) return;
+  if (po.length === labels.length - 1 && po.some((m) => m.playoffRound === 0)) return;
+  if (po.some((m) => m.status === 'finished')) return;
+  if (po.length) store.removeWhere('matches', (m) => m.tournamentId === tour.id && m.stage === 'playoff');
+  const stageMax = Math.max(0, ...stageMatches(tour, all).map((m) => +m.round || 0));
+  const rounds = bracketSkeleton(labels);
+  const ms = rounds.flat().map((x) => ({
+    id: x.id, status: 'scheduled', stage: 'playoff', playoffRound: x.r, playoffIdx: x.k, playoffLabel: x.label,
+    tournamentId: tour.id, competition: `${tour.name} · ${x.label}`, round: x.label,
+    homeId: '', awayId: '', homeLabel: x.homeId || '', awayLabel: x.awayId || '',
+    homeRef: x.homeRef, awayRef: x.awayRef,
+    official: true, played: false, myTeam: '', date: dateFor(tour, stageMax + 1 + x.r), time: tour.defaultTime || '',
+    result: { mode: 'exact', home: 0, away: 0, winner: '' }, goals: 0, assists: 0,
+    mvp: 'unknown', events: [], prediction: { mode: 'none' },
+  }));
+  store.upsertMany('matches', ms);
+  materialize(tour.id);
+}
+
+// Ganador según el resultado o, si no hay, según la predicción
+export function projectedWinner(m) {
+  const o = outcome(m);
+  if (o.known) return o.winner === 'home' ? 'home' : o.winner === 'away' ? 'away' : null;
+  const p = predOutcome(m.prediction);
+  return p.known && p.winner !== 'draw' ? p.winner : null;
+}
+
+// Nombre de un lado del cruce: equipo real, texto de grupo, ganador previo o predicho
+export function slotName(m, side, all, depth = 0) {
+  const id = side === 'home' ? m.homeId : m.awayId;
+  if (id) return { name: store.find('teams', id)?.name || id, team: id, predicted: false };
+  const ref = side === 'home' ? m.homeRef : m.awayRef;
+  const label = side === 'home' ? m.homeLabel : m.awayLabel;
+  if (ref && depth < 8) {
+    const src = all.find((x) => x.id === ref);
+    if (src) {
+      const w = projectedWinner(src);
+      if (w) { const r = slotName(src, w, all, depth + 1); return { ...r, predicted: r.predicted || !outcome(src).known }; }
+      return { name: `Ganador ${src.playoffLabel} ${src.playoffIdx + 1}`, team: '', predicted: false, pending: true };
+    }
+  }
+  return { name: label || 'Por definir', team: '', predicted: false, pending: true };
+}
+
+// Playoffs como rondas, con los nombres que corresponden hoy
+export function projectedRounds(tourId, all) {
+  const po = all.filter((m) => m.tournamentId === tourId && m.stage === 'playoff');
+  if (!po.length) return [];
+  const max = Math.max(...po.map((m) => m.playoffRound));
+  const out = [];
+  for (let r = 0; r <= max; r++) {
+    const ms = po.filter((m) => m.playoffRound === r).sort((a, b) => a.playoffIdx - b.playoffIdx);
+    if (ms.length) out.push({ label: ms[0].playoffLabel, matches: ms });
+  }
+  return out;
 }
 
 // ── Simulación (Monte Carlo) ──────────────────────────────
@@ -235,7 +316,8 @@ export function simulateTournament(tour0, all, { runs = 4000, usePredictions = t
   const letters = tour.format === 'groups' ? groupLetters(tour) : null;
   const adv = tour.advance || 1;
   const hasPO = !!tour.playoff;
-  const existingPO = all.filter((m) => m.tournamentId === tour.id && m.stage === 'playoff');
+  const existingPO0 = all.filter((m) => m.tournamentId === tour.id && m.stage === 'playoff');
+  const existingPO = existingPO0.length && existingPO0.filter((m) => m.playoffRound === 0).every((m) => m.homeId && m.awayId) ? existingPO0 : [];
   const playoffN = letters ? letters.length * adv : (tour.playoffSize || 4);
   const roundsLabels = hasPO && playoffN >= 2 ? bracketSkeleton(Array(playoffN).fill('x')).map((r) => r[0].label) : [];
   const R = roundsLabels.length;

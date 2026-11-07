@@ -5,7 +5,7 @@ import { crest, empty, confirmDialog, toast, teamName } from '../ui.js';
 import { standings, totals, outcome, predOutcome, isMine } from '../stats.js';
 import { matchCard, resPill, statTile, progressBar, tourBadge } from '../components.js';
 import { openTournamentForm, openMatchForm } from '../forms.js';
-import { withGroups, previewBracket, generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
+import { withGroups, previewBracket, projectedRounds, slotName, syncPlayoffs, generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
 import { tourMini } from './home.js';
 import { shareLink, tournamentPayload } from '../share.js';
 
@@ -74,7 +74,11 @@ export const TourDetailView = {
       <div class="detail-actions"><button class="btn ghost" data-act="sharelink">${ic('cloud')} Compartir torneo</button><button class="btn ghost danger-txt" data-act="del">${ic('trash')} Borrar torneo</button></div>`;
   },
   actions: {
-    tab: (el, ev, id) => { TAB[id] = el.dataset.tab; window.__rerender(); },
+    tab: (el, ev, id) => {
+      TAB[id] = el.dataset.tab;
+      if (el.dataset.tab === 'po' || el.dataset.tab === 'predict') syncPlayoffs(store.find('tournaments', id));
+      window.__rerender();
+    },
     round: (el, ev, id) => { ROUND[id] = el.dataset.r === 'last' ? null : +el.dataset.r; window.__rerender(); },
     expand: (el, ev, id) => {
       const set = (EXP[id] = EXP[id] || new Set());
@@ -253,6 +257,7 @@ function renderTab(tab, t, s, ms) {
       <div class="sec-head"><h2>Tabla proyectada</h2><span class="muted small">${nPred}/${pend.length} predichos</span></div>
       ${proj.map((tb, i) => `${tb.label ? `<h3 class="group-title">${tb.label}</h3>` : ''}${table(t, tb.rows, { prevRows: cur[i].rows })}`).join('')}
       ${legend(t, proj.flatMap((tb) => tb.rows))}
+      ${t.playoff ? playoffPredSection(t, s) : ''}
       ${nPred ? `<button class="btn ghost sm mt" data-act="clearpred">${ic('x')} Borrar mis predicciones</button>` : ''}`;
   }
 
@@ -305,44 +310,55 @@ function renderTab(tab, t, s, ms) {
 }
 
 function playoffsTab(t, s) {
-  const rounds = bracketRounds(t.id, s.matches);
+  const rounds = projectedRounds(t.id, s.matches);
   if (!rounds.length) {
     const prov = previewBracket(t, s.matches);
-    if (prov.length) {
-      const pend0 = pendingStage(t, s.matches);
-      return `<div class="bp-note">Cuadro provisorio. Se completa con los equipos reales cuando se generen los playoffs${pend0 ? ` (faltan ${pend0} partidos de la fase regular)` : ''}.</div>
-        <div class="bracket-scroll"><div class="bracket">${prov.map((rd) => `<div class="br-col"><h4>${esc(rd.label)}</h4>${rd.matches.map(bracketCard).join('')}</div>`).join('')}</div></div>
-        <button class="btn primary block mt" data-act="genpo" ${pendingStage(t, s.matches) ? 'disabled' : ''}>${ic('spark')} Generar cuadro con los equipos</button>`;
-    }
+    return `<div class="bp-note">Cuadro provisorio. Se completa cuando se generen los playoffs.</div>
+      <div class="bracket-scroll"><div class="bracket">${prov.map((rd) => `<div class="br-col"><h4>${esc(rd.label)}</h4>${rd.matches.map((m) => bracketCard(m, s.matches, true)).join('')}</div>`).join('')}</div></div>`;
   }
-  if (!rounds.length) {
-    const pend = pendingStage(t, s.matches);
-    const seeds = playoffSeeds(t, s.matches);
-    return `<div class="card cta-card"><h3 class="card-title">${ic('trophy')} Playoffs</h3>
-      <p>${pend
-        ? `Faltan ${pend} partido${pend > 1 ? 's' : ''} de la fase regular. Cuando terminen, generá el cuadro.`
-        : `Listo: ${seeds.length} clasificado${seeds.length === 1 ? '' : 's'} ${t.format === 'groups' ? 'de los grupos' : 'de la tabla'}. Generá el cuadro.`}</p>
-      <button class="btn primary sm" data-act="genpo" ${pend ? 'disabled' : ''}>${ic('spark')} Generar cuadro de playoffs</button></div>`;
-  }
-  return `<div class="bracket-scroll"><div class="bracket">${rounds.map((rd) => `
-    <div class="br-col"><h4>${esc(rd.label)}</h4>${rd.matches.map(bracketCard).join('')}</div>`).join('')}</div></div>
-    <p class="hint">Deslizá para ver todo el cuadro. Tocá un partido para cargar su resultado: el ganador pasa solo a la siguiente ronda.</p>`;
+  const champ = championOf(t.id, s.matches);
+  const pendingN = pendingStage(t, s.matches);
+  return `${pendingN ? `<div class="bp-note">Los nombres de los grupos se reemplazan por los equipos cuando termina la fase regular (faltan ${pendingN} partidos). Lo que aparece en cursiva es provisorio: sale de tus predicciones.</div>` : ''}
+    ${champ ? `<div class="champ">🏆 Campeón: <b>${esc(teamName(champ))}</b></div>` : ''}
+    <div class="bracket-scroll"><div class="bracket">${rounds.map((rd) => `
+      <div class="br-col"><h4>${esc(rd.label)}</h4>${rd.matches.map((m) => bracketCard(m, s.matches)).join('')}</div>`).join('')}</div></div>
+    <p class="hint">Tocá un partido para cargar su resultado o predecirlo. El ganador pasa solo a la siguiente ronda.</p>`;
 }
 
-function bracketCard(m) {
-  const h = store.find('teams', m.homeId), a = store.find('teams', m.awayId);
+function bracketCard(m, all, provisional = false) {
   const o = outcome(m);
-  const row = (team, side, label) => {
-    if (!team) label = (side === 'home' ? m.homeId : m.awayId) || label;
+  const row = (side) => {
+    const sn = provisional
+      ? { name: (side === 'home' ? m.homeId : m.awayId) || 'Por definir', team: '', predicted: false, pending: true }
+      : slotName(m, side, all);
     const won = o.known && o.winner === side;
     const score = o.known && o.scoreKnown ? (side === 'home' ? o.hg : o.ag) : won ? '✓' : '';
-    return `<div class="bc-row ${won ? 'won' : ''} ${team ? '' : 'tbd'}">${team ? crest(team, 'xs') : ''}<span>${team ? esc(team.name) : esc(label)}</span><b>${score}</b></div>`;
+    const team = sn.team ? store.find('teams', sn.team) : null;
+    return `<div class="bc-row ${won ? 'won' : ''} ${sn.pending ? 'tbd' : ''} ${sn.predicted ? 'pred' : ''}">${team ? crest(team, 'xs') : ''}<span>${esc(sn.name)}</span><b>${score}</b></div>`;
   };
   return `<a class="bc-card" href="#/partido/${m.id}">
-    ${row(h, 'home', 'Por definir')}
-    ${row(a, 'away', 'Por definir')}
-    <span class="bc-meta">${m.date ? fmtDate(m.date) : 'Sin fecha'}${m.status === 'finished' ? '' : ''}</span>
+    ${row('home')}
+    ${row('away')}
+    <span class="bc-meta">${m.date ? fmtDate(m.date) : 'Sin fecha'}</span>
   </a>`;
+}
+
+// Predicción de los playoffs: se puede predecir aunque todavía falten equipos
+function playoffPredSection(t, s) {
+  const rounds = projectedRounds(t.id, s.matches);
+  if (!rounds.length) return '';
+  const rows = rounds.map((rd) => `<h3 class="group-title">${esc(rd.label)}</h3>${rd.matches.filter((m) => m.status !== 'finished').map((m) => {
+    const hn = slotName(m, 'home', s.matches), an = slotName(m, 'away', s.matches);
+    const w = m.prediction?.mode === 'winner' ? m.prediction.winner : '';
+    return `<div class="po-pred">
+      <div class="po-names">
+        <button type="button" class="${w === 'home' ? 'on' : ''} ${hn.pending ? 'tbd' : ''}" data-act="pred" data-m="${m.id}" data-w="home">${esc(hn.name)}</button>
+        <span class="dash">vs</span>
+        <button type="button" class="${w === 'away' ? 'on' : ''} ${an.pending ? 'tbd' : ''}" data-act="pred" data-m="${m.id}" data-w="away">${esc(an.name)}</button>
+      </div>
+    </div>`;
+  }).join('')}`).join('');
+  return `<div class="sec-head"><h2>Playoffs</h2><span class="muted small">Predecí quién pasa en cada cruce</span></div>${rows || '<p class="muted small">Ya se jugaron todos los partidos de playoffs.</p>'}`;
 }
 
 const pct = (p) => (p >= 0.995 ? '100%' : p > 0 && p < 0.01 ? '<1%' : Math.round(p * 100) + '%');

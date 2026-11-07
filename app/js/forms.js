@@ -4,7 +4,7 @@ import { ic } from './icons.js';
 import { openSheet, toast, confirmDialog, pickImage, crest, avatar, seg, stepper, refreshShow, teamName } from './ui.js';
 import { tourBadge } from './components.js';
 import { EVENT_TYPES, POSITIONS, STAT_LABELS, years, SURFACES } from './stats.js';
-import { generateTourFixture, materialize, hasStageFixture, nextPow2, roundLabel } from './playoffs.js';
+import { generateTourFixture, materialize, syncPlayoffs, withGroups, hasStageFixture, nextPow2, roundLabel } from './playoffs.js';
 
 const footer = (saveLabel = 'Guardar', extra = '') =>
   `${extra}<button class="btn ghost" data-close type="button">Cancelar</button><button class="btn primary" data-save type="button">${saveLabel}</button>`;
@@ -238,6 +238,7 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       </div>
       <label class="field"><span>Cancha / lugar</span><input name="venue" value="${esc(m.venue)}" placeholder="Ej: Complejo Parada 5" list="venue-list"></label>
       <datalist id="venue-list">${store.list('venues').map((v) => `<option value="${esc(v.name)}">`).join('')}</datalist>
+      <label class="check-row"><input type="checkbox" name="countsForTable" ${m.countsForTable === false ? '' : 'checked'}><span><b>Cuenta para la tabla del torneo</b><br><small class="muted">Destildalo si el partido no suma puntos (por ejemplo, un amistoso dentro del torneo).</small></span></label>
       ${tours.length ? `<label class="field"><span>Torneo</span><select name="tournamentId"><option value="">Ninguno</option>${tours.map((t) => `<option value="${t.id}" ${t.id === m.tournamentId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : '<input type="hidden" name="tournamentId" value="">'}
       <div class="grid2">
         <label class="field" data-show="tournamentId:"><span>Competición</span><input name="competition" value="${esc(m.competition)}" placeholder="Liga, copa, amistoso…" list="comp-list"></label>
@@ -355,7 +356,13 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       events: events.map((e) => ({ ...e, minute: e.minute === '' ? '' : int0(e.minute), note: (e.note || '').trim() })),
       prediction: { mode: v('pmode'), home: int0(v('pHome')), away: int0(v('pAway')), winner: v('pWinner') },
       notes: v('notes').trim(),
+      countsForTable: form.elements.countsForTable ? form.elements.countsForTable.checked : true,
     };
+    if (tour && tour.format === 'groups') {
+      const go = withGroups(tour, store.list('matches')).groupOf || {};
+      const g1 = go[slots.home], g2 = go[slots.away];
+      data.group = g1 && g1 === g2 ? g1 : '';
+    }
     if (data.status === 'finished' && data.result.mode === 'winner' && !data.result.winner) { toast('Elegí quién ganó (o marcá “No sé”)'); return; }
     if (data.status === 'scheduled' && data.prediction.mode === 'winner' && !data.prediction.winner) data.prediction.mode = 'none';
     if (data.venue && !store.list('venues').some((x) => x.name.toLowerCase() === data.venue.toLowerCase())) {
@@ -570,7 +577,8 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     }
     if (form.elements.gen?.checked && active.length >= 2) generateTourFixture(saved);
     if (tour && myTeamId !== tour.myTeamId) syncMyTeam(saved);
-    if (saved.playoff) materialize(saved.id);
+    syncPlayoffs(saved);
+    materialize(saved.id);
     toast(tour ? 'Torneo actualizado' : 'Torneo creado', { type: 'ok' });
     sh.close().then(() => onSaved && onSaved(saved));
   }

@@ -240,6 +240,12 @@ function row(id) { return { teamId: id, pj: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, p
 //  group: solo equipos y partidos de ese grupo (formato con grupos)
 //  upTo:  tabla tal como estaba hasta la fecha N
 //  projected: incluye predicciones de partidos pendientes
+// Un partido pertenece al grupo si tiene esa letra, o si sus dos equipos están en ese grupo
+function inGroup(tour, m, group) {
+  if (m.group) return m.group === group;
+  return tour.groupOf?.[m.homeId] === group && tour.groupOf?.[m.awayId] === group;
+}
+
 export function standings(tour, all, { projected = false, group = null, upTo = null } = {}) {
   const P = tour.points || { w: 3, d: 1, l: 0 };
   const rows = new Map();
@@ -247,9 +253,10 @@ export function standings(tour, all, { projected = false, group = null, upTo = n
   (tour.teamIds || []).filter((id) => !group || tour.groupOf?.[id] === group).forEach(ensure);
   const ms = all
     .filter((m) => m.tournamentId === tour.id && (m.stage || 'league') !== 'playoff'
-      && (!group || m.group === group) && (upTo == null || +m.round <= upTo))
+      && (!group || inGroup(tour, m, group)) && (upTo == null || +m.round <= upTo))
     .sort(byDateAsc);
   for (const m of ms) {
+    if (m.countsForTable === false) continue;
     let o = outcome(m);
     let pred = false;
     if (!o.known && projected && m.status === 'scheduled') { o = predOutcome(m.prediction); pred = o.known; }

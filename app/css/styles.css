@@ -787,3 +787,12 @@ body.welcome-on #app { visibility: hidden; }
 .col-picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .col-pick { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line-2); font-size: 13px; font-weight: 600; cursor: pointer; }
 .col-pick input { width: 16px; height: 16px; accent-color: var(--accent-2); margin: 0; }
+.bc-row.pred span { font-style: italic; }
+.bc-row.tbd span { color: var(--muted); font-style: italic; }
+.po-pred { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; margin-bottom: 8px; }
+.po-names { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; }
+.po-names button { min-height: 40px; border-radius: 11px; background: var(--surface-2); border: 1px solid var(--line-2); font-weight: 650; font-size: 13px; padding: 4px 6px; line-height: 1.2; }
+.po-names button.on { background: var(--info); color: #fff; border-color: transparent; }
+.po-names button.tbd { font-style: italic; color: var(--muted); }
+.po-names button.on.tbd { color: #fff; }
+.chip.nc { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); border-color: transparent; }
