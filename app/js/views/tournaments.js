@@ -5,8 +5,9 @@ import { crest, empty, confirmDialog, toast, teamName } from '../ui.js';
 import { standings, totals, outcome, predOutcome, isMine } from '../stats.js';
 import { matchCard, resPill, statTile, progressBar } from '../components.js';
 import { openTournamentForm, openMatchForm } from '../forms.js';
-import { generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds } from '../playoffs.js';
+import { generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
 import { tourMini } from './home.js';
+import { shareLink, tournamentPayload } from '../share.js';
 
 export const ToursView = {
   title: 'Torneos',
@@ -69,7 +70,7 @@ export const TourDetailView = {
       <nav class="tabs" role="tablist">${tabs.map(([k, l, i]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-act="tab" data-tab="${k}">${ic(i)}<span>${l}</span></button>`).join('')}</nav>
       <div class="tab-body">${renderTab(tab, t, s, ms)}</div>
       ${t.notes ? `<section class="card mt"><h3 class="card-title">${ic('note')} Notas</h3><p class="prewrap">${esc(t.notes)}</p></section>` : ''}
-      <div class="detail-actions"><button class="btn ghost danger-txt" data-act="del">${ic('trash')} Borrar torneo</button></div>`;
+      <div class="detail-actions"><button class="btn ghost" data-act="sharelink">${ic('cloud')} Compartir torneo</button><button class="btn ghost danger-txt" data-act="del">${ic('trash')} Borrar torneo</button></div>`;
   },
   actions: {
     tab: (el, ev, id) => { TAB[id] = el.dataset.tab; window.__rerender(); },
@@ -81,13 +82,15 @@ export const TourDetailView = {
       window.__rerender();
     },
     edit: (el, ev, id) => openTournamentForm({ tour: store.find('tournaments', id) }),
+    sharelink: (el, ev, id) => shareLink(tournamentPayload(store.find('tournaments', id))),
     addmatch: (el, ev, id) => {
       const t = store.find('tournaments', id);
       openMatchForm({ defaults: { tournamentId: id, official: t.official !== false, competition: t.name, played: false, myTeam: '' } });
     },
     gen: (el, ev, id) => {
       const t = store.find('tournaments', id);
-      if ((t.teamIds || []).length < 2) { toast('Agregá al menos 2 equipos al torneo'); return; }
+      if (hasStageFixture(id)) { toast('Ya hay fixture generado. Para rehacerlo, borrá los partidos de la fase regular.', { ms: 3800 }); return; }
+      if ((t.teamIds || []).filter((x) => !t.withdrawn?.[x]).length < 2) { toast('Agregá al menos 2 equipos activos al torneo'); return; }
       const n = generateTourFixture(t);
       toast(`Fixture generado: ${n} partidos`, { type: 'ok' });
     },

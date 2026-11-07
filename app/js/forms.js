@@ -1,9 +1,9 @@
 import * as store from './store.js';
-import { esc, num, int0, todayISO, clone, uid, isNum } from './util.js';
+import { esc, num, int0, todayISO, clone, uid, isNum, titleCase } from './util.js';
 import { ic } from './icons.js';
 import { openSheet, toast, confirmDialog, pickImage, crest, avatar, seg, stepper, refreshShow, teamName } from './ui.js';
 import { EVENT_TYPES, POSITIONS, STAT_LABELS, years, SURFACES } from './stats.js';
-import { generateTourFixture, materialize, isPow2 } from './playoffs.js';
+import { generateTourFixture, materialize, hasStageFixture, nextPow2, roundLabel } from './playoffs.js';
 
 const footer = (saveLabel = 'Guardar', extra = '') =>
   `${extra}<button class="btn ghost" data-close type="button">Cancelar</button><button class="btn primary" data-save type="button">${saveLabel}</button>`;
@@ -151,6 +151,10 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       </div>
     </section>
 
+    <section class="fs" data-show="played:yes">
+      <label class="field"><span>¿En qué posición jugaste? <em>(opcional)</em></span><select name="position"><option value="">—</option>${POSITIONS.map((p) => `<option ${p === m.position ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
+    </section>
+
     <section class="fs" data-show="status:suspended">
       <label class="field"><span>Razón <em>(opcional)</em></span><textarea name="suspendReason" rows="2" placeholder="Lluvia, falta de árbitro, cancha cerrada…">${esc(m.suspendReason)}</textarea></label>
       <label class="field"><span>Nueva fecha <em>(si se reprogramó)</em></span><input type="date" name="newDate" value="${esc(m.newDate)}"></label>
@@ -193,7 +197,6 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       </div>
       <div class="grid2 mt">
         <div><span class="mini-label">Arranqué</span>${seg('starter', [['starter', 'Titular'], ['sub', 'Suplente']], m.starter, { small: true })}</div>
-        <label class="field"><span>Posición</span><select name="position"><option value="">—</option>${POSITIONS.map((p) => `<option ${p === m.position ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
       </div>
       <div class="mt">
         <span class="mini-label">¿Fuiste el mejor de la cancha? (MVP)</span>
@@ -336,7 +339,7 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       played,
       homeId: slots.home, awayId: slots.away,
       myTeam: played ? v('myTeam') : '',
-      date: v('date'), time: v('time'), venue: v('venue').trim(),
+      date: v('date'), time: v('time'), venue: titleCase(v('venue')),
       tournamentId: tid,
       competition: tour ? tour.name : v('competition').trim(),
       round: v('round').trim(),
@@ -371,12 +374,14 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
   const t = {
     name: '', season: todayISO().slice(0, 4), double: false, points: { w: 3, d: 1, l: 0 }, teamIds: [], myTeamId: '',
     official: true, notes: '', promo: 0, releg: 0, format: 'league', groups: 2, advance: 1,
-    playoff: false, playoffSize: 4, showTrend: false, adjust: {}, ...clone(tour || {}),
+    playoff: false, playoffSize: 4, showTrend: false, adjust: {}, withdrawn: {},
+    startDate: '', everyDays: 7, defaultTime: '', ...clone(tour || {}),
   };
   let teamIds = [...t.teamIds];
   let myTeamId = t.myTeamId;
   const adjust = { ...(t.adjust || {}) };
-  const hasMatches = tour && store.list('matches').some((m) => m.tournamentId === tour.id);
+  const withdrawn = { ...(t.withdrawn || {}) };
+  const hasFixture = tour && hasStageFixture(tour.id);
   const sh = openSheet({
     title: tour ? 'Editar torneo' : 'Nuevo torneo', cls: 'tall',
     body: `<form class="form">
@@ -389,15 +394,15 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
       </section>
 
       <section class="fs">
-        <label class="fs-label">Equipos participantes</label>
+        <label class="fs-label">1 · Equipos</label>
         <div class="tour-teams" data-teams></div>
         <button type="button" class="btn ghost block" data-addteams>${ic('plus')} Agregar equipos</button>
-        <p class="hint">Tocá la ⭐ para marcar tu equipo. En “Ajuste” podés sumar o restar puntos (sanciones, bonus).</p>
+        <p class="hint">⭐ marca tu equipo. <b>Retirar</b> saca al equipo de los partidos que faltan jugar (lo jugado queda). <b>Ajuste</b> suma o resta puntos.</p>
       </section>
 
       <section class="fs">
-        <label class="fs-label">Formato de la fase regular</label>
-        ${seg('format', [['league', 'Todos contra todos'], ['groups', 'Grupos']], t.format)}
+        <label class="fs-label">2 · Fase regular</label>
+        ${seg('format', [['league', 'Todos contra todos (liga)'], ['groups', 'Grupos']], t.format)}
         <p class="hint" data-show="format:league">Todos juegan contra todos y se arma una tabla.</p>
         <p class="hint" data-show="format:groups">Los equipos se reparten en grupos. Cada grupo tiene su tabla y después pasan a playoffs.</p>
         <div class="grid2 mt" data-show="format:groups">
@@ -411,27 +416,38 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
           <div><span class="mini-label">Pts derrota</span>${stepper('pl', t.points.l, { max: 10 })}</div>
         </div>
         <div class="grid2 mt" data-show="format:league">
-          <div><span class="mini-label">Clasifican / ascienden</span>${stepper('promo', t.promo || 0, { max: 30 })}</div>
           <div><span class="mini-label">Descienden</span>${stepper('releg', t.releg || 0, { max: 30 })}</div>
+          <div><span class="mini-label">Clasifican directo (sin playoffs)</span>${stepper('promo', t.promo || 0, { max: 30 })}</div>
         </div>
       </section>
 
       <section class="fs">
-        <label class="fs-label">Playoffs</label>
+        <label class="fs-label">3 · Playoffs</label>
         <div data-show="format:league">
-          <label class="check-row"><input type="checkbox" name="playoff" ${t.playoff ? 'checked' : ''}><span><b>Hay playoffs</b><br><small class="muted">Los mejores de la tabla juegan eliminación directa.</small></span></label>
-          <div class="mt" data-show="playoff:true">
-            <span class="mini-label">¿Cuántos clasifican?</span>
-            ${seg('playoffSize', [['2', '2'], ['4', '4'], ['8', '8']], String(t.playoffSize || 4), { small: true })}
-          </div>
+          <label class="check-row"><input type="checkbox" name="playoff" ${t.playoff ? 'checked' : ''}><span><b>Hay playoffs</b><br><small class="muted">Los mejores de la tabla juegan eliminación directa (cuartos, semis, final).</small></span></label>
         </div>
-        <p class="hint" data-show="format:groups">Con grupos siempre hay playoffs: clasifican según la cantidad de grupos y “pasan por grupo”. Para playoffs hacen falta 2, 4 u 8 equipos.</p>
+        <div class="mt" data-show="playoff:true;format:league">
+          <span class="mini-label">¿Cuántos clasifican?</span>
+          ${stepper('playoffSize', t.playoffSize || 4, { min: 2, max: 16 })}
+        </div>
+        <p class="hint" data-show="format:groups">Con grupos siempre hay playoffs. Clasifican los que pasan por grupo (${t.advance === 2 ? 'los 1° y 2°' : 'los 1°'} de cada grupo).</p>
+        <div class="bracket-preview" data-bracket></div>
       </section>
 
       <section class="fs">
-        <label class="fs-label">Tabla</label>
-        <label class="check-row"><input type="checkbox" name="showTrend" ${t.showTrend ? 'checked' : ''}><span><b>Mostrar cómo cambió cada equipo</b><br><small class="muted">Flechas con la posición de la fecha anterior. Se puede ver también la tabla de cada fecha.</small></span></label>
-        ${!hasMatches ? `<label class="check-row mt"><input type="checkbox" name="gen" checked><span><b>Generar el fixture automáticamente</b><br><small class="muted">Después podés cargar fechas y resultados.</small></span></label>` : ''}
+        <label class="fs-label">4 · Calendario</label>
+        <div class="grid2">
+          <label class="field"><span>Fecha de la fecha 1 <em>(opcional)</em></span><input type="date" name="startDate" value="${esc(t.startDate)}"></label>
+          <div><span class="mini-label">Cada cuántos días</span>${stepper('everyDays', t.everyDays || 7, { min: 1, max: 60 })}</div>
+        </div>
+        <label class="field mt"><span>Hora por defecto <em>(opcional)</em></span><input type="time" name="defaultTime" value="${esc(t.defaultTime)}"></label>
+        <p class="hint">Con la fecha de inicio, cada fecha del fixture y de los playoffs se pone sola en el calendario.</p>
+      </section>
+
+      <section class="fs">
+        <label class="fs-label">5 · Tabla</label>
+        <label class="check-row"><input type="checkbox" name="showTrend" ${t.showTrend ? 'checked' : ''}><span><b>Mostrar cómo cambió cada equipo</b><br><small class="muted">Flechas con la posición de la fecha anterior.</small></span></label>
+        ${!hasFixture ? `<label class="check-row mt"><input type="checkbox" name="gen" checked><span><b>Generar el fixture automáticamente</b><br><small class="muted">Se arma con los equipos que no estén retirados.</small></span></label>` : ''}
       </section>
 
       <section class="fs">
@@ -442,23 +458,44 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
   });
   const form = bindForm(sh, save);
   const box = sh.el.querySelector('[data-teams]');
+  const bracketBox = sh.el.querySelector('[data-bracket]');
+
   function paint() {
     box.innerHTML = teamIds.length ? teamIds.map((id) => {
       const tm = store.find('teams', id);
-      return `<div class="tt-item ${id === myTeamId ? 'mine' : ''}" data-id="${id}">
-        ${crest(tm, 'sm')}<span>${esc(tm?.name || '?')}</span>
+      const out = !!withdrawn[id];
+      return `<div class="tt-item ${id === myTeamId ? 'mine' : ''} ${out ? 'out' : ''}" data-id="${id}">
+        ${crest(tm, 'sm')}<span>${esc(tm?.name || '?')}${out ? ' <small class="muted">· retirado</small>' : ''}</span>
         <div class="adj-box">${stepper('adj_' + id, adjust[id] || 0, { min: -99, max: 99 })}</div>
+        <button type="button" class="chip-btn wd ${out ? 'on' : ''}" data-wd>${out ? 'Retirado' : 'Retirar'}</button>
         <button type="button" class="icon-btn sm star" data-star aria-label="Mi equipo">${ic('star')}</button>
         <button type="button" class="icon-btn sm" data-rm aria-label="Quitar">${ic('x')}</button></div>`;
     }).join('') : '<p class="hint">Todavía no agregaste equipos.</p>';
+    paintBracket();
     refreshShow(form);
   }
+  // Vista previa del cuadro: cuántos pasan directo y en qué ronda arrancan
+  function paintBracket() {
+    const n = int0(form.elements.playoffSize?.value) || t.playoffSize || 4;
+    const groups = int0(form.elements.groups?.value) || 2;
+    const adv = form.elements.advance?.value === '2' ? 2 : 1;
+    const size = form.elements.format?.value === 'groups' ? groups * adv : n;
+    const playing = teamIds.filter((id) => !withdrawn[id]).length;
+    const P = nextPow2(Math.max(2, size));
+    const first = roundLabel(P);
+    const byes = P - size;
+    bracketBox.innerHTML = size >= 2 ? `<div class="bp-note">${size} clasificados · cuadro de ${P} · ${first}${byes > 0 ? `. Los ${byes} mejores de la tabla pasan directo a la siguiente ronda.` : '.'}${playing && size > playing ? ' <b class="warn-txt">Hay más clasificados que equipos activos.</b>' : ''}</div>` : '';
+  }
   paint();
+  form.addEventListener('input', paintBracket);
+
   box.addEventListener('click', (e) => {
     const it = e.target.closest('[data-id]');
     if (!it) return;
-    if (e.target.closest('[data-star]')) { myTeamId = myTeamId === it.dataset.id ? '' : it.dataset.id; paint(); }
-    if (e.target.closest('[data-rm]')) { teamIds = teamIds.filter((x) => x !== it.dataset.id); if (myTeamId === it.dataset.id) myTeamId = ''; paint(); }
+    const id = it.dataset.id;
+    if (e.target.closest('[data-star]')) { myTeamId = myTeamId === id ? '' : id; paint(); }
+    if (e.target.closest('[data-wd]')) { if (withdrawn[id]) delete withdrawn[id]; else withdrawn[id] = true; paint(); }
+    if (e.target.closest('[data-rm]')) { teamIds = teamIds.filter((x) => x !== id); if (myTeamId === id) myTeamId = ''; delete withdrawn[id]; paint(); }
   });
   box.addEventListener('input', (e) => {
     const n = e.target.name || '';
@@ -476,20 +513,31 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     const groups = Math.min(4, Math.max(2, int0(v('groups')) || 2));
     const advance = v('advance') === '2' ? 2 : 1;
     const playoff = format === 'groups' ? true : form.elements.playoff.checked;
-    const playoffSize = int0(v('playoffSize')) || 4;
-    if (format === 'groups' && teamIds.length < groups * 2) { toast(`Con ${groups} grupos necesitás al menos ${groups * 2} equipos`); return; }
-    if (format === 'league' && playoff && !isPow2(playoffSize)) { toast('Playoffs: elegí 2, 4 u 8 clasificados'); return; }
-    if (format === 'league' && playoff && playoffSize > teamIds.length) { toast('Hay más clasificados que equipos'); return; }
+    const playoffSize = Math.max(2, int0(v('playoffSize')) || 4);
+    const active = teamIds.filter((id) => !withdrawn[id]);
+    if (format === 'groups' && active.length < groups * 2) { toast(`Con ${groups} grupos necesitás al menos ${groups * 2} equipos activos`); return; }
+    if (format === 'league' && playoff && playoffSize > active.length) { toast('Hay más clasificados que equipos activos'); return; }
     const adj = {};
     for (const id of teamIds) { const x = parseInt(adjust[id], 10); if (x) adj[id] = x; }
+    const wd = {};
+    for (const id of teamIds) if (withdrawn[id]) wd[id] = true;
     const saved = store.upsert('tournaments', {
       id: tour?.id, name, season: v('season').trim(), official: v('official') === 'official', double: v('double') === 'yes',
       points: { w: int0(v('pw')), d: int0(v('pd')), l: int0(v('pl')) },
       promo: int0(v('promo')), releg: int0(v('releg')),
       format, groups, advance, playoff, playoffSize, showTrend: form.elements.showTrend.checked,
-      adjust: adj, teamIds, myTeamId, notes: v('notes').trim(),
+      startDate: v('startDate'), everyDays: Math.max(1, int0(v('everyDays')) || 7), defaultTime: v('defaultTime'),
+      adjust: adj, withdrawn: wd, teamIds, myTeamId, notes: v('notes').trim(),
     });
-    if (form.elements.gen?.checked && teamIds.length >= 2) generateTourFixture(saved);
+    // equipos retirados: se quitan los partidos que faltan jugar
+    if (tour) {
+      const removed = store.list('matches').filter((m) => m.tournamentId === saved.id && m.status === 'scheduled'
+        && (m.stage || 'league') !== 'playoff' && (wd[m.homeId] || wd[m.awayId])).length;
+      store.removeWhere('matches', (m) => m.tournamentId === saved.id && m.status === 'scheduled'
+        && (m.stage || 'league') !== 'playoff' && (wd[m.homeId] || wd[m.awayId]));
+      if (removed) toast(`Se quitaron ${removed} partido${removed > 1 ? 's' : ''} pendiente${removed > 1 ? 's' : ''} de equipos retirados`, { ms: 3800 });
+    }
+    if (form.elements.gen?.checked && active.length >= 2) generateTourFixture(saved);
     if (tour && myTeamId !== tour.myTeamId) syncMyTeam(saved);
     if (saved.playoff) materialize(saved.id);
     toast(tour ? 'Torneo actualizado' : 'Torneo creado', { type: 'ok' });
@@ -619,7 +667,7 @@ export function openVenueForm({ venue = null } = {}) {
     if (!name) { toast('Poné el nombre del lugar'); return; }
     const dup = store.list('venues').find((x) => x.name.toLowerCase() === name.toLowerCase() && x.id !== venue?.id);
     if (dup) { toast('Ya existe una cancha con ese nombre'); return; }
-    store.upsert('venues', { id: venue?.id, name, surface: form.elements.surface.value, size: form.elements.size.value });
+    store.upsert('venues', { id: venue?.id, name: titleCase(name), surface: form.elements.surface.value, size: form.elements.size.value });
     toast('Cancha guardada', { type: 'ok' });
     sh.close();
   }
@@ -729,6 +777,41 @@ export function openNoteEditor({ note = null } = {}) {
     if (!title && !body) { if (note) { store.remove('notes', note.id); } return; }
     if (note && title === n.title && body === n.body && color === n.color && pinned === n.pinned && tag === n.tag) return;
     store.upsert('notes', { id: note?.id, title, body, color, pinned, tag });
+  }
+}
+
+
+// ═════════════════════════════════════════════════════════
+//  OTHER PLAYER (jugadores guardados, secundario)
+// ═════════════════════════════════════════════════════════
+export function openPlayerForm({ player = null, onSaved } = {}) {
+  const p = { name: '', team: '', category: '', position: '', goals: 0, assists: 0, matches: 0, notes: '', ...clone(player || {}) };
+  const sh = openSheet({
+    title: player ? 'Editar jugador' : 'Nuevo jugador', cls: 'dialog',
+    body: `<form class="form">
+      <label class="field"><span>Nombre</span><input name="name" value="${esc(p.name)}" placeholder="Ej: Schleider Lila" maxlength="40"></label>
+      <div class="grid2">
+        <label class="field"><span>Equipo</span><input name="team" value="${esc(p.team)}" placeholder="Ej: Juventus Negro" list="team-names"></label>
+        <label class="field"><span>Categoría <em>(opcional)</em></span><input name="category" value="${esc(p.category)}" placeholder="2010/2009"></label>
+      </div>
+      <datalist id="team-names">${store.list('teams').map((t) => `<option value="${esc(t.name)}">`).join('')}</datalist>
+      <label class="field"><span>Posición <em>(opcional)</em></span><select name="position"><option value="">—</option>${POSITIONS.map((x) => `<option ${x === p.position ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
+      <div class="grid3">
+        <div><span class="mini-label">Partidos</span>${stepper('matches', p.matches, { max: 999 })}</div>
+        <div><span class="mini-label">Goles</span>${stepper('goals', p.goals, { max: 999 })}</div>
+        <div><span class="mini-label">Asist.</span>${stepper('assists', p.assists, { max: 999 })}</div>
+      </div>
+      <label class="field mt"><span>Notas <em>(opcional)</em></span><textarea name="notes" rows="2" placeholder="Cómo juega, datos que te sirvan…">${esc(p.notes)}</textarea></label>
+    </form>`,
+    footer: footer(),
+  });
+  const form = bindForm(sh, save);
+  function save() {
+    const v = (n) => form.elements[n].value.trim();
+    if (!v('name')) { toast('Poné el nombre del jugador'); return; }
+    const saved = store.upsert('players', { id: player?.id, name: v('name'), team: v('team'), category: v('category'), position: v('position'), matches: int0(v('matches')), goals: int0(v('goals')), assists: int0(v('assists')), notes: v('notes') });
+    toast('Jugador guardado', { type: 'ok' });
+    sh.close().then(() => onSaved && onSaved(saved));
   }
 }
 

@@ -10,10 +10,11 @@ import { ToursView, TourDetailView } from './views/tournaments.js';
 import Career from './views/career.js';
 import Notes from './views/notes.js';
 import Settings from './views/settings.js';
+import Shared from './views/shared.js';
 
 const routes = {
   inicio: Home, partidos: MatchesView, partido: MatchDetailView, torneos: ToursView,
-  torneo: TourDetailView, carrera: Career, notas: Notes, ajustes: Settings,
+  torneo: TourDetailView, carrera: Career, notas: Notes, ajustes: Settings, compartido: Shared,
 };
 const NAV = [
   ['inicio', 'Inicio', 'home'], ['partidos', 'Partidos', 'ball'], ['torneos', 'Torneos', 'trophy'],

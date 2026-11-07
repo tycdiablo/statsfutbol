@@ -5,6 +5,9 @@ import { crest, empty, seg, confirmDialog, toast, choiceDialog } from '../ui.js'
 import { isMine, outcome, predOutcome, myResult, RES_TEXT, EVENT_TYPES, STATUS, venueDetail } from '../stats.js';
 import { matchCard, scoreHTML, statusChip, resPill } from '../components.js';
 import { openMatchForm } from '../forms.js';
+import { pitchSVG, kitById, openLineupEditor, openKitsManager } from '../lineup.js';
+import { addPhoto, getPhotoURL, removePhoto } from '../media.js';
+import { matchPayload, shareLink } from '../share.js';
 import { openImportSheet } from '../import.js';
 
 const F = { status: 'all', kind: 'all', who: 'all', q: '' };
@@ -152,15 +155,61 @@ export const MatchDetailView = {
     ${predTxt}
     ${m.notes ? `<section class="card"><h3 class="card-title">${ic('note')} Notas</h3><p class="prewrap">${esc(m.notes)}</p></section>` : ''}
 
+    ${mine || m.lineup ? `<section class="card">
+      <div class="sec-head flat"><h3 class="card-title">${ic('user')} Alineación</h3><button class="link" data-act="lineup">${m.lineup ? 'Editar' : 'Cargar'}</button></div>
+      ${m.lineup ? lineupBlock(m) : '<p class="muted small">Opcional: la formación, los nombres y las camisetas.</p>'}
+      ${m.lineup ? `<div class="row-actions"><button class="btn ghost sm" data-act="kits">${ic('shield')} Camisetas</button></div>` : ''}
+    </section>` : ''}
+
+    <section class="card">
+      <div class="sec-head flat"><h3 class="card-title">${ic('camera')} Fotos</h3><button class="link" data-act="addphoto">${ic('plus', 'inline')} Agregar</button></div>
+      <div class="photo-grid" data-photos></div>
+      <p class="hint">Las fotos se guardan en este celular (no se suben a la nube).</p>
+    </section>
+
     <div class="detail-actions">
       <button class="btn ghost" data-act="edit">${ic('edit')} Editar</button>
       <button class="btn ghost" data-act="share">${ic('share')} Compartir</button>
+      <button class="btn ghost" data-act="sharelink">${ic('cloud')} Link</button>
       <button class="btn ghost" data-act="dup">${ic('copy')} Duplicar</button>
       <button class="btn ghost danger-txt" data-act="del">${ic('trash')} Borrar</button>
     </div>`;
   },
+  mount(root, id) { loadPhotos(root, id); },
   actions: {
     edit: (el, ev, id) => openMatchForm({ match: store.find('matches', id) }),
+    lineup: (el, ev, id) => {
+      const m = store.find('matches', id);
+      openLineupEditor({ match: m, onSave: (lineup) => { store.upsert('matches', { id, lineup }); toast('Alineación guardada', { type: 'ok' }); window.__rerender(); } });
+    },
+    kits: (el, ev, id) => {
+      const m = store.find('matches', id);
+      const team = store.find('teams', m.myTeam === 'away' ? m.awayId : m.homeId);
+      if (team) openKitsManager(team);
+    },
+    addphoto: (el, ev, id) => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+      inp.onchange = async () => {
+        const m = store.find('matches', id);
+        const ids = [...(m.photos || [])];
+        for (const f of inp.files) {
+          try { ids.push(await addPhoto(f)); } catch (e) { console.warn(e); toast('No se pudo guardar una foto', { type: 'error' }); }
+        }
+        store.upsert('matches', { id, photos: ids });
+        window.__rerender();
+      };
+      inp.click();
+    },
+    delphoto: async (el, ev, id) => {
+      const pid = el.dataset.p;
+      if (!(await confirmDialog('Se borra la foto de este celular.', { ok: 'Borrar', danger: true }))) return;
+      await removePhoto(pid);
+      const m = store.find('matches', id);
+      store.upsert('matches', { id, photos: (m.photos || []).filter((x) => x !== pid) });
+      window.__rerender();
+    },
+    sharelink: (el, ev, id) => shareLink(matchPayload(store.find('matches', id))),
     finish: (el, ev, id) => openMatchForm({ match: store.find('matches', id), defaults: { status: 'finished' } }),
     suspend: (el, ev, id) => openMatchForm({ match: store.find('matches', id), defaults: { status: 'suspended' } }),
     dup: async (el, ev, id) => {
@@ -217,4 +266,27 @@ function shareText(m) {
   if (m.competition) lines.push(m.competition);
   lines.push('— StatsFútbol');
   return lines.filter(Boolean).join('\n');
+}
+
+// Vista previa de la alineación guardada
+function lineupBlock(m) {
+  const L = m.lineup;
+  const myT = store.find('teams', m.myTeam === 'away' ? m.awayId : m.homeId);
+  const rivT = store.find('teams', m.myTeam === 'away' ? m.homeId : m.awayId);
+  return `<div class="pitch-wrap">${pitchSVG({ formation: L.formation, players: L.mine, kit: kitById(myT?.id, L.kitMine), uidp: 'dm' })}${L.showRival ? pitchSVG({ formation: L.formation, players: L.rival, kit: kitById(rivT?.id, L.kitRival), mirror: true, uidp: 'dr' }) : ''}</div>`;
+}
+
+async function loadPhotos(root, id) {
+  const m = store.find('matches', id);
+  const box = root.querySelector('[data-photos]');
+  if (!box) return;
+  const ids = m?.photos || [];
+  if (!ids.length) { box.innerHTML = '<p class="muted small">Todavía no hay fotos.</p>'; return; }
+  box.innerHTML = ids.map((p) => `<div class="ph" data-ph="${p}"><span class="muted small">cargando…</span></div>`).join('');
+  for (const pid of ids) {
+    const url = await getPhotoURL(pid).catch(() => null);
+    const cell = box.querySelector(`[data-ph="${pid}"]`);
+    if (!cell) continue;
+    cell.innerHTML = url ? `<img src="${url}" alt="Foto del partido"><button class="ph-del" data-act="delphoto" data-p="${pid}" aria-label="Borrar foto">${ic('x')}</button>` : '<span class="muted small">No disponible</span>';
+  }
 }

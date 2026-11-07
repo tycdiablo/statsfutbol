@@ -63,3 +63,21 @@ export async function push(uid, parts) {
   }
   await batch.commit();
 }
+
+// ── Compartir: copia de solo lectura en la colección "shares" ──
+export async function createShare(payload) {
+  if (!fb) throw new Error('no-cloud');
+  const { fsM, db, auth } = fb;
+  const ref = await fsM.addDoc(fsM.collection(db, 'shares'), {
+    json: JSON.stringify(payload), kind: payload.kind, createdAt: Date.now(), by: auth.currentUser?.uid || '',
+  });
+  return ref.id;
+}
+
+export async function getShare(id) {
+  if (!fb) throw new Error('no-cloud');
+  const { fsM, db } = fb;
+  const snap = await fsM.getDoc(fsM.doc(db, 'shares', id));
+  if (!snap.exists()) return null;
+  return JSON.parse(snap.data().json);
+}

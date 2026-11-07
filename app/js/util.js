@@ -111,3 +111,7 @@ export function download(filename, text, type = 'application/json') {
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
+
+// "COMPLEJO juventus" → "Complejo Juventus" (primera mayúscula de cada palabra)
+export const titleCase = (s) => String(s || '').trim().replace(/\s+/g, ' ')
+  .toLowerCase().replace(/(^|[\s(\-/])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());

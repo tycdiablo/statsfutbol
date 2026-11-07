@@ -1,9 +1,9 @@
 // Offline support: app shell cached, network-first for code so updates arrive quickly.
-const CACHE = 'statsfutbol-v3';
+const CACHE = 'statsfutbol-v5';
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'js/app.js', 'js/store.js', 'js/cloud.js', 'js/config.js', 'js/util.js', 'js/icons.js', 'js/ui.js', 'js/stats.js',
-  'js/forms.js', 'js/components.js', 'js/session.js', 'js/demo.js', 'js/playoffs.js', 'js/import.js',
+  'js/forms.js', 'js/components.js', 'js/session.js', 'js/demo.js', 'js/playoffs.js', 'js/import.js', 'js/lineup.js', 'js/media.js', 'js/share.js', 'js/views/shared.js',
   'js/views/home.js', 'js/views/matches.js', 'js/views/tournaments.js', 'js/views/career.js', 'js/views/notes.js', 'js/views/settings.js',
 ];
 self.addEventListener('install', (e) => {

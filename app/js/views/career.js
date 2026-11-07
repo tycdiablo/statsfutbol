@@ -4,7 +4,8 @@ import { ic } from '../icons.js';
 import { avatar, crest, empty, seg, confirmDialog, toast } from '../ui.js';
 import { totals, byYear, byTeam, monthly, achievements, years, STAT_LABELS, playedMatches, EVENT_TYPES } from '../stats.js';
 import { statTile, progressBar, sectionHead, barChart } from '../components.js';
-import { openProfileForm, openClubForm, openInjuryForm, openGoalForm } from '../forms.js';
+import { openProfileForm, openClubForm, openInjuryForm, openGoalForm, openPlayerForm } from '../forms.js';
+import { openRosterSheet } from '../import.js';
 import { goalProgress } from './home.js';
 
 const F = { official: '', year: '' };
@@ -114,6 +115,10 @@ export default {
       return `<button class="goal-row ${gp.done ? 'done' : ''}" data-act="editgoal" data-id="${g.id}"><div class="goal-top"><span>${gp.done ? '✅ ' : ''}${STAT_LABELS[g.stat]}${g.year ? ` en ${g.year}` : ' (carrera)'}${g.official ? (g.official === 'official' ? ' · oficiales' : ' · no oficiales') : ''}</span><b>${fmtNum(gp.v)} / ${fmtNum(g.target)}</b></div>${progressBar(gp.p)}</button>`;
     }).join('')}</div>` : `<div class="card cta-card"><p>Definí metas y seguí tu progreso automáticamente.</p><button class="btn ghost sm" data-act="addgoal">${ic('target')} Crear objetivo</button></div>`}
 
+    ${sectionHead(`Otros jugadores <span class="count">${s.players.length}</span>`, `<button class="link" data-act="importroster">${ic('upload', 'inline')} Convocados</button> <button class="link" data-act="addplayer">${ic('plus', 'inline')} Jugador</button>`)}
+    ${s.players.length ? `<div class="card list-card">${s.players.slice().sort((a, b) => a.name.localeCompare(b.name)).map((p) => `<button class="inj-row" data-act="editplayer" data-id="${p.id}"><span class="inj-ico">${ic('user')}</span><div><b>${esc(p.name)}</b><span class="muted small">${esc([p.team, p.category].filter(Boolean).join(' · ') || 'Sin equipo')}</span></div><span class="small">${p.goals || 0} G · ${p.assists || 0} A · ${p.matches || 0} PJ</span></button>`).join('')}</div>`
+      : '<div class="card cta-card"><p class="small">Guardá compañeros o rivales para ver sus números. Podés pegar la lista de convocados del club.</p></div>'}
+
     ${sectionHead('Logros', `<span class="muted small">${ach.filter((x) => x.unlocked).length}/${ach.length}</span>`)}
     <div class="badges">${ach.map((x) => `<div class="badge ${x.unlocked ? 'on' : ''}" title="${esc(x.desc)}"><span class="badge-ico">${x.icon}</span><b>${esc(x.title)}</b><small>${esc(x.desc)}</small>${x.unlocked ? '' : progressBar(x.progress, 'thin')}</div>`).join('')}</div>
     `;
@@ -135,6 +140,9 @@ export default {
     addinj: () => openInjuryForm(),
     editinj: (el) => injuryActions(el.dataset.id),
     addgoal: () => openGoalForm(),
+    addplayer: () => openPlayerForm(),
+    editplayer: (el) => openPlayerForm({ player: store.find('players', el.dataset.id) }),
+    importroster: () => openRosterSheet({ onDone: () => window.__rerender() }),
     editgoal: (el) => goalActions(el.dataset.id),
   },
 };
