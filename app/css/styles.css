@@ -770,3 +770,14 @@ body.welcome-on #app { visibility: hidden; }
 .sh-teams { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 6px 0; }
 .sh-team { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
 .pitch-wrap { max-width: 340px; margin: 0 auto; }
+.shared-box { max-width: 640px; margin: 8px auto; }
+.shared-actions { display: grid; gap: 10px; margin: 16px 0 6px; }
+.sh-match { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px dashed var(--line-2); font-size: 14px; }
+.sh-match:last-child { border-bottom: 0; }
+.sh-match span { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-match span.r { text-align: right; }
+.sh-match b { font-family: var(--display); font-size: 18px; text-align: center; min-width: 60px; }
+.sh-po { margin-bottom: 8px; }
+.sh-round { padding: 4px 14px; margin-bottom: 8px; }
+.tour-head-card { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tour-head-card h2 { font-family: var(--display); font-size: 26px; text-transform: uppercase; }

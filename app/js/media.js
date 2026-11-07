@@ -58,3 +58,31 @@ export async function getPhotoURL(id) {
 export async function removePhoto(id) {
   await tx('readwrite', (s) => s.delete(id));
 }
+
+// Versión chica de una foto (para compartir): dataURL en WebP
+async function shrinkBlob(blob, max = 800, quality = 0.75) {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    await new Promise((ok, ko) => { img.onload = ok; img.onerror = ko; img.src = url; });
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * s)), h = Math.max(1, Math.round(img.naturalHeight * s));
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c.toDataURL('image/webp', quality);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+export async function photoDataURL(id) {
+  const blob = await tx('readonly', (s) => s.get(id));
+  return blob ? shrinkBlob(blob) : null;
+}
+
+// Guarda una dataURL recibida (por compartir) como foto local
+export async function saveDataURL(dataURL) {
+  const blob = await (await fetch(dataURL)).blob();
+  const id = uid();
+  await tx('readwrite', (s) => s.put(blob, id));
+  return id;
+}
