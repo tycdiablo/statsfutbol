@@ -5,6 +5,7 @@ import { avatar, crest, empty } from '../ui.js';
 import { totals, form, streaks, upcoming, playedMatches, predictionAccuracy, achievements, STAT_LABELS, myResult, RES_TEXT, rivalId, standings } from '../stats.js';
 import { matchCard, resPill, statTile, progressBar, sectionHead } from '../components.js';
 import { openMatchForm, openProfileForm, openNoteEditor, openTournamentForm, openGoalForm } from '../forms.js';
+import { session } from '../session.js';
 
 function greeting() {
   const h = new Date().getHours();
@@ -39,6 +40,8 @@ export default {
     const activeTours = s.tournaments.filter((tr) => s.matches.some((m) => m.tournamentId === tr.id && m.status === 'scheduled')).slice(0, 2);
 
     return `
+    ${!session.user && session.configured && store.hasContent() ? `<div class="banner login-banner">${ic('cloud')}<span>Tus datos están solo en este celular. Entrá con Google para guardarlos en la nube y verlos desde la PC.</span><button class="btn primary sm" data-act="login">Entrar</button></div>` : ''}
+
     <section class="hero">
       <a href="#/carrera" class="hero-avatar">${avatar(p, 'lg')}</a>
       <div class="hero-text">
@@ -116,6 +119,7 @@ export default {
     newnote: () => openNoteEditor(),
     newtour: () => openTournamentForm({ onSaved: (t) => { location.hash = '#/torneo/' + t.id; } }),
     newgoal: () => openGoalForm(),
+    login: () => session.signIn(),
   },
 };
 

@@ -51,7 +51,7 @@ function paintSync() {
   const st = session.user ? session.sync : 'local';
   el.className = 'sync sync-' + st;
   el.title = { local: 'Sin cuenta: guardado en este dispositivo', pending: 'Sincronizando…', ok: 'Guardado en la nube', error: 'Error de sincronización', offline: 'Sin conexión' }[st];
-  el.innerHTML = session.user ? ic('cloud') : '';
+  el.innerHTML = session.user ? ic('cloud') : (session.configured ? `<a href="#/ajustes" class="sync-off" title="Sin cuenta: tocá para entrar con Google">${ic('cloud')}</a>` : '');
 }
 
 function renderFab(V) {

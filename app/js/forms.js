@@ -2,7 +2,8 @@ import * as store from './store.js';
 import { esc, num, int0, todayISO, clone, uid, isNum } from './util.js';
 import { ic } from './icons.js';
 import { openSheet, toast, confirmDialog, pickImage, crest, avatar, seg, stepper, refreshShow, teamName } from './ui.js';
-import { EVENT_TYPES, POSITIONS, STAT_LABELS, roundRobin, years } from './stats.js';
+import { EVENT_TYPES, POSITIONS, STAT_LABELS, years, SURFACES } from './stats.js';
+import { generateTourFixture, materialize, isPow2 } from './playoffs.js';
 
 const footer = (saveLabel = 'Guardar', extra = '') =>
   `${extra}<button class="btn ghost" data-close type="button">Cancelar</button><button class="btn primary" data-save type="button">${saveLabel}</button>`;
@@ -166,7 +167,11 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       <p class="hint" data-show="rmode:approx">Poné el resultado que creés que fue. Se marca con “~”.</p>
       <div data-show="rmode:winner" class="mt">
         ${seg('rWinner', [['home', '<span data-tn="home">Local</span>'], ['draw', 'Empate'], ['away', '<span data-tn="away">Visitante</span>']], m.result.winner)}
-        <p class="hint">Cuenta los puntos en la tabla, pero no los goles.</p>
+        <div class="mt" data-show="rWinner:home,away">
+          <span class="mini-label">¿Por cuántos goles de diferencia? <em>(opcional, 0 = no lo sé)</em></span>
+          ${stepper('margin', m.result.margin ?? 0, { max: 30, label: 'Diferencia de goles' })}
+        </div>
+        <p class="hint">Cuenta los puntos en la tabla, pero no los goles exactos.</p>
       </div>
       <p class="hint" data-show="rmode:unknown">No se cuenta en tablas ni en victorias/derrotas.</p>
     </section>
@@ -227,7 +232,8 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
         <label class="field"><span>Fecha</span><input type="date" name="date" value="${esc(m.date)}"></label>
         <label class="field"><span>Hora</span><input type="time" name="time" value="${esc(m.time)}"></label>
       </div>
-      <label class="field"><span>Cancha / lugar</span><input name="venue" value="${esc(m.venue)}" placeholder="Ej: Club Atlético, cancha 2"></label>
+      <label class="field"><span>Cancha / lugar</span><input name="venue" value="${esc(m.venue)}" placeholder="Ej: Complejo Parada 5" list="venue-list"></label>
+      <datalist id="venue-list">${store.list('venues').map((v) => `<option value="${esc(v.name)}">`).join('')}</datalist>
       ${tours.length ? `<label class="field"><span>Torneo</span><select name="tournamentId"><option value="">Ninguno</option>${tours.map((t) => `<option value="${t.id}" ${t.id === m.tournamentId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : '<input type="hidden" name="tournamentId" value="">'}
       <div class="grid2">
         <label class="field" data-show="tournamentId:"><span>Competición</span><input name="competition" value="${esc(m.competition)}" placeholder="Liga, copa, amistoso…" list="comp-list"></label>
@@ -335,7 +341,7 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
       competition: tour ? tour.name : v('competition').trim(),
       round: v('round').trim(),
       suspendReason: v('suspendReason').trim(), newDate: v('newDate'),
-      result: { mode: v('rmode'), home: int0(v('rHome')), away: int0(v('rAway')), winner: v('rWinner') },
+      result: { mode: v('rmode'), home: int0(v('rHome')), away: int0(v('rAway')), winner: v('rWinner'), margin: int0(v('margin')) || null },
       minutes: v('minutes') === '' ? '' : int0(v('minutes')),
       minutesExact: form.elements.minutesExact.checked,
       starter: v('starter'), position: v('position'),
@@ -348,7 +354,11 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
     };
     if (data.status === 'finished' && data.result.mode === 'winner' && !data.result.winner) { toast('Elegí quién ganó (o marcá “No sé”)'); return; }
     if (data.status === 'scheduled' && data.prediction.mode === 'winner' && !data.prediction.winner) data.prediction.mode = 'none';
+    if (data.venue && !store.list('venues').some((x) => x.name.toLowerCase() === data.venue.toLowerCase())) {
+      store.upsert('venues', { name: data.venue, surface: '', size: '' });
+    }
     const saved = store.upsert('matches', data);
+    if (saved.tournamentId) materialize(saved.tournamentId);
     toast(match ? 'Partido actualizado' : 'Partido agregado', { type: 'ok' });
     sh.close().then(() => onSaved && onSaved(saved));
   }
@@ -358,9 +368,14 @@ export function openMatchForm({ match = null, defaults = {}, onSaved } = {}) {
 //  TOURNAMENT
 // ═════════════════════════════════════════════════════════
 export function openTournamentForm({ tour = null, onSaved } = {}) {
-  const t = { name: '', season: todayISO().slice(0, 4), double: false, points: { w: 3, d: 1, l: 0 }, teamIds: [], myTeamId: '', official: true, notes: '', promo: 0, releg: 0, ...clone(tour || {}) };
+  const t = {
+    name: '', season: todayISO().slice(0, 4), double: false, points: { w: 3, d: 1, l: 0 }, teamIds: [], myTeamId: '',
+    official: true, notes: '', promo: 0, releg: 0, format: 'league', groups: 2, advance: 1,
+    playoff: false, playoffSize: 4, showTrend: false, adjust: {}, ...clone(tour || {}),
+  };
   let teamIds = [...t.teamIds];
   let myTeamId = t.myTeamId;
+  const adjust = { ...(t.adjust || {}) };
   const hasMatches = tour && store.list('matches').some((m) => m.tournamentId === tour.id);
   const sh = openSheet({
     title: tour ? 'Editar torneo' : 'Nuevo torneo', cls: 'tall',
@@ -372,26 +387,53 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
           <div><span class="mini-label">Tipo</span>${seg('official', [['official', 'Oficial'], ['friendly', 'No oficial']], t.official === false ? 'friendly' : 'official', { small: true })}</div>
         </div>
       </section>
+
       <section class="fs">
         <label class="fs-label">Equipos participantes</label>
         <div class="tour-teams" data-teams></div>
         <button type="button" class="btn ghost block" data-addteams>${ic('plus')} Agregar equipos</button>
-        <p class="hint">Tocá la ⭐ para marcar tu equipo.</p>
+        <p class="hint">Tocá la ⭐ para marcar tu equipo. En “Ajuste” podés sumar o restar puntos (sanciones, bonus).</p>
       </section>
+
       <section class="fs">
-        <label class="fs-label">Formato</label>
-        ${seg('double', [['no', 'Solo ida'], ['yes', 'Ida y vuelta']], t.double ? 'yes' : 'no')}
+        <label class="fs-label">Formato de la fase regular</label>
+        ${seg('format', [['league', 'Todos contra todos'], ['groups', 'Grupos']], t.format)}
+        <p class="hint" data-show="format:league">Todos juegan contra todos y se arma una tabla.</p>
+        <p class="hint" data-show="format:groups">Los equipos se reparten en grupos. Cada grupo tiene su tabla y después pasan a playoffs.</p>
+        <div class="grid2 mt" data-show="format:groups">
+          <div><span class="mini-label">Cantidad de grupos</span>${stepper('groups', t.groups, { min: 2, max: 4 })}</div>
+          <div><span class="mini-label">Pasan por grupo</span>${seg('advance', [['1', '1°'], ['2', '1° y 2°']], String(t.advance), { small: true })}</div>
+        </div>
+        ${seg('double', [['no', 'Solo ida'], ['yes', 'Ida y vuelta']], t.double ? 'yes' : 'no', { small: true, cls: 'mt' })}
         <div class="grid3 mt">
           <div><span class="mini-label">Pts victoria</span>${stepper('pw', t.points.w, { max: 10 })}</div>
           <div><span class="mini-label">Pts empate</span>${stepper('pd', t.points.d, { max: 10 })}</div>
           <div><span class="mini-label">Pts derrota</span>${stepper('pl', t.points.l, { max: 10 })}</div>
         </div>
-        <div class="grid2 mt">
+        <div class="grid2 mt" data-show="format:league">
           <div><span class="mini-label">Clasifican / ascienden</span>${stepper('promo', t.promo || 0, { max: 30 })}</div>
           <div><span class="mini-label">Descienden</span>${stepper('releg', t.releg || 0, { max: 30 })}</div>
         </div>
-        ${!hasMatches ? `<label class="check-row mt"><input type="checkbox" name="gen" checked><span><b>Generar el fixture automáticamente</b><br><small class="muted">Todos contra todos. Después podés cargar fechas y resultados.</small></span></label>` : ''}
       </section>
+
+      <section class="fs">
+        <label class="fs-label">Playoffs</label>
+        <div data-show="format:league">
+          <label class="check-row"><input type="checkbox" name="playoff" ${t.playoff ? 'checked' : ''}><span><b>Hay playoffs</b><br><small class="muted">Los mejores de la tabla juegan eliminación directa.</small></span></label>
+          <div class="mt" data-show="playoff:true">
+            <span class="mini-label">¿Cuántos clasifican?</span>
+            ${seg('playoffSize', [['2', '2'], ['4', '4'], ['8', '8']], String(t.playoffSize || 4), { small: true })}
+          </div>
+        </div>
+        <p class="hint" data-show="format:groups">Con grupos siempre hay playoffs: clasifican según la cantidad de grupos y “pasan por grupo”. Para playoffs hacen falta 2, 4 u 8 equipos.</p>
+      </section>
+
+      <section class="fs">
+        <label class="fs-label">Tabla</label>
+        <label class="check-row"><input type="checkbox" name="showTrend" ${t.showTrend ? 'checked' : ''}><span><b>Mostrar cómo cambió cada equipo</b><br><small class="muted">Flechas con la posición de la fecha anterior. Se puede ver también la tabla de cada fecha.</small></span></label>
+        ${!hasMatches ? `<label class="check-row mt"><input type="checkbox" name="gen" checked><span><b>Generar el fixture automáticamente</b><br><small class="muted">Después podés cargar fechas y resultados.</small></span></label>` : ''}
+      </section>
+
       <section class="fs">
         <label class="field"><span>Notas <em>(opcional)</em></span><textarea name="notes" rows="2" placeholder="Reglamento, premios, sede…">${esc(t.notes)}</textarea></label>
       </section>
@@ -403,10 +445,13 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
   function paint() {
     box.innerHTML = teamIds.length ? teamIds.map((id) => {
       const tm = store.find('teams', id);
-      return `<div class="tt-item ${id === myTeamId ? 'mine' : ''}" data-id="${id}">${crest(tm, 'sm')}<span>${esc(tm?.name || '?')}</span>
+      return `<div class="tt-item ${id === myTeamId ? 'mine' : ''}" data-id="${id}">
+        ${crest(tm, 'sm')}<span>${esc(tm?.name || '?')}</span>
+        <div class="adj-box">${stepper('adj_' + id, adjust[id] || 0, { min: -99, max: 99 })}</div>
         <button type="button" class="icon-btn sm star" data-star aria-label="Mi equipo">${ic('star')}</button>
         <button type="button" class="icon-btn sm" data-rm aria-label="Quitar">${ic('x')}</button></div>`;
     }).join('') : '<p class="hint">Todavía no agregaste equipos.</p>';
+    refreshShow(form);
   }
   paint();
   box.addEventListener('click', (e) => {
@@ -414,6 +459,10 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     if (!it) return;
     if (e.target.closest('[data-star]')) { myTeamId = myTeamId === it.dataset.id ? '' : it.dataset.id; paint(); }
     if (e.target.closest('[data-rm]')) { teamIds = teamIds.filter((x) => x !== it.dataset.id); if (myTeamId === it.dataset.id) myTeamId = ''; paint(); }
+  });
+  box.addEventListener('input', (e) => {
+    const n = e.target.name || '';
+    if (n.startsWith('adj_')) adjust[n.slice(4)] = parseInt(e.target.value, 10) || 0;
   });
   sh.el.querySelector('[data-addteams]').addEventListener('click', () => {
     openTeamPicker({ multi: true, selected: teamIds, onDone: (ids) => { teamIds = ids; if (!ids.includes(myTeamId)) myTeamId = ''; paint(); } });
@@ -423,38 +472,29 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     const v = (n) => form.elements[n]?.value ?? '';
     const name = v('name').trim();
     if (!name) { toast('Poné un nombre al torneo'); form.elements.name.focus(); return; }
-    const official = v('official') === 'official';
+    const format = v('format') === 'groups' ? 'groups' : 'league';
+    const groups = Math.min(4, Math.max(2, int0(v('groups')) || 2));
+    const advance = v('advance') === '2' ? 2 : 1;
+    const playoff = format === 'groups' ? true : form.elements.playoff.checked;
+    const playoffSize = int0(v('playoffSize')) || 4;
+    if (format === 'groups' && teamIds.length < groups * 2) { toast(`Con ${groups} grupos necesitás al menos ${groups * 2} equipos`); return; }
+    if (format === 'league' && playoff && !isPow2(playoffSize)) { toast('Playoffs: elegí 2, 4 u 8 clasificados'); return; }
+    if (format === 'league' && playoff && playoffSize > teamIds.length) { toast('Hay más clasificados que equipos'); return; }
+    const adj = {};
+    for (const id of teamIds) { const x = parseInt(adjust[id], 10); if (x) adj[id] = x; }
     const saved = store.upsert('tournaments', {
-      id: tour?.id, name, season: v('season').trim(), official, double: v('double') === 'yes',
+      id: tour?.id, name, season: v('season').trim(), official: v('official') === 'official', double: v('double') === 'yes',
       points: { w: int0(v('pw')), d: int0(v('pd')), l: int0(v('pl')) },
       promo: int0(v('promo')), releg: int0(v('releg')),
-      teamIds, myTeamId, notes: v('notes').trim(),
+      format, groups, advance, playoff, playoffSize, showTrend: form.elements.showTrend.checked,
+      adjust: adj, teamIds, myTeamId, notes: v('notes').trim(),
     });
-    if (form.elements.gen?.checked && teamIds.length >= 2) {
-      generateFixture(saved);
-    }
-    // keep "played/myTeam" in sync with the chosen team
+    if (form.elements.gen?.checked && teamIds.length >= 2) generateTourFixture(saved);
     if (tour && myTeamId !== tour.myTeamId) syncMyTeam(saved);
+    if (saved.playoff) materialize(saved.id);
     toast(tour ? 'Torneo actualizado' : 'Torneo creado', { type: 'ok' });
     sh.close().then(() => onSaved && onSaved(saved));
   }
-}
-
-export function generateFixture(tour) {
-  const rounds = roundRobin(tour.teamIds, tour.double);
-  const out = [];
-  rounds.forEach((pairs, i) => pairs.forEach(([h, a]) => {
-    const mine = tour.myTeamId && (h === tour.myTeamId || a === tour.myTeamId);
-    out.push({
-      status: 'scheduled', tournamentId: tour.id, competition: tour.name, round: String(i + 1),
-      homeId: h, awayId: a, official: tour.official !== false, played: !!mine,
-      myTeam: mine ? (h === tour.myTeamId ? 'home' : 'away') : '',
-      date: '', time: '', result: { mode: 'exact', home: 0, away: 0, winner: '' },
-      goals: 0, assists: 0, mvp: 'unknown', events: [], prediction: { mode: 'none' },
-    });
-  }));
-  store.upsertMany('matches', out);
-  return out.length;
 }
 
 function syncMyTeam(tour) {
@@ -486,8 +526,7 @@ export function openProfileForm() {
         <label class="field"><span>Posición</span><select name="position">${posOpts(p.position)}</select></label>
         <label class="field"><span>Posición secundaria</span><select name="position2">${posOpts(p.position2)}</select></label>
       </div>
-      <div class="grid3">
-        <label class="field"><span>Dorsal</span><input name="number" inputmode="numeric" maxlength="3" value="${esc(p.number)}" placeholder="10"></label>
+      <div class="grid2">
         <label class="field"><span>Altura (cm)</span><input name="height" inputmode="numeric" maxlength="3" value="${esc(p.height)}" placeholder="175"></label>
         <label class="field"><span>Nacimiento</span><input type="date" name="birth" value="${esc(p.birth)}"></label>
       </div>
@@ -505,7 +544,7 @@ export function openProfileForm() {
   sh.el.querySelector('[data-nophoto]').addEventListener('click', () => { photo = ''; paint(); });
   function save() {
     const v = (n) => form.elements[n].value.trim();
-    store.setProfile({ name: v('name'), nickname: v('nickname'), position: v('position'), position2: v('position2'), number: v('number'), height: v('height'), birth: v('birth'), foot: v('foot'), bio: v('bio'), photo });
+    store.setProfile({ name: v('name'), nickname: v('nickname'), position: v('position'), position2: v('position2'), number: p.number, height: v('height'), birth: v('birth'), foot: v('foot'), bio: v('bio'), photo });
     toast('Perfil guardado', { type: 'ok' });
     sh.close();
   }
@@ -534,7 +573,6 @@ export function openClubForm({ club = null } = {}) {
       <label class="check-row"><input type="checkbox" name="current" ${c.current ? 'checked' : ''}><span>Juego acá actualmente</span></label>
       <div class="grid2 mt">
         <label class="field"><span>Categoría / división</span><input name="category" value="${esc(c.category)}" placeholder="Primera, Sub-17…"></label>
-        <label class="field"><span>Dorsal</span><input name="number" inputmode="numeric" maxlength="3" value="${esc(c.number)}" placeholder="9"></label>
       </div>
       <label class="field"><span>Notas / logros</span><textarea name="notes" rows="2" placeholder="Campeón 2023, capitán…">${esc(c.notes)}</textarea></label>
     </form>`,
@@ -556,8 +594,33 @@ export function openClubForm({ club = null } = {}) {
     const v = (n) => form.elements[n].value.trim();
     if (!v('name')) { toast('Poné el nombre del club'); return; }
     const current = form.elements.current.checked;
-    store.upsert('clubs', { id: club?.id, name: v('name'), logo, from: v('from'), to: current ? '' : v('to'), current, category: v('category'), number: v('number'), teamId: v('teamId'), notes: v('notes') });
+    store.upsert('clubs', { id: club?.id, name: v('name'), logo, from: v('from'), to: current ? '' : v('to'), current, category: v('category'), number: c.number || '', teamId: v('teamId'), notes: v('notes') });
     toast('Club guardado', { type: 'ok' });
+    sh.close();
+  }
+}
+
+export function openVenueForm({ venue = null } = {}) {
+  const v = { name: '', surface: '', size: '', ...clone(venue || {}) };
+  const sh = openSheet({
+    title: venue ? 'Editar cancha' : 'Nueva cancha', cls: 'dialog',
+    body: `<form class="form">
+      <label class="field"><span>Nombre del lugar</span><input name="name" value="${esc(v.name)}" placeholder="Ej: Complejo Parada 5"></label>
+      <div class="grid2">
+        <label class="field"><span>Superficie</span><select name="surface"><option value="">Sin dato</option>${Object.entries(SURFACES).map(([k, l]) => `<option value="${k}" ${k === v.surface ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Tamaño</span><select name="size"><option value="">Sin dato</option>${['5', '7', '9', '11'].map((s) => `<option value="${s}" ${s === String(v.size) ? 'selected' : ''}>Cancha de ${s}</option>`).join('')}</select></label>
+      </div>
+    </form>`,
+    footer: footer(),
+  });
+  const form = bindForm(sh, save);
+  function save() {
+    const name = form.elements.name.value.trim();
+    if (!name) { toast('Poné el nombre del lugar'); return; }
+    const dup = store.list('venues').find((x) => x.name.toLowerCase() === name.toLowerCase() && x.id !== venue?.id);
+    if (dup) { toast('Ya existe una cancha con ese nombre'); return; }
+    store.upsert('venues', { id: venue?.id, name, surface: form.elements.surface.value, size: form.elements.size.value });
+    toast('Cancha guardada', { type: 'ok' });
     sh.close();
   }
 }
@@ -567,15 +630,15 @@ export function openClubForm({ club = null } = {}) {
 // ═════════════════════════════════════════════════════════
 const INJURY_TYPES = ['Esguince de tobillo', 'Esguince de rodilla', 'Desgarro', 'Contractura', 'Distensión', 'Rotura de ligamentos', 'Fractura', 'Tendinitis', 'Golpe / contusión', 'Pubalgia', 'Lumbalgia'];
 export function openInjuryForm({ injury = null } = {}) {
-  const i = { type: '', zone: '', date: todayISO(), days: '', status: 'recovered', notes: '', ...clone(injury || {}) };
+  const i = { type: '', zone: '', date: '', days: '', status: 'recovered', notes: '', ...clone(injury || {}) };
   const sh = openSheet({
     title: injury ? 'Editar lesión' : 'Registrar lesión', cls: 'dialog',
     body: `<form class="form">
       <label class="field"><span>Lesión</span><input name="type" list="inj-list" value="${esc(i.type)}" placeholder="Ej: Esguince de tobillo"></label>
       <datalist id="inj-list">${INJURY_TYPES.map((x) => `<option value="${x}">`).join('')}</datalist>
       <div class="grid2">
-        <label class="field"><span>Fecha</span><input type="date" name="date" value="${esc(i.date)}"></label>
-        <label class="field"><span>Días de baja</span><input name="days" inputmode="numeric" value="${esc(i.days)}" placeholder="Ej: 15"></label>
+        <label class="field"><span>Fecha <em>(opcional)</em></span><input type="date" name="date" value="${esc(i.date)}"></label>
+        <label class="field"><span>Días de baja <em>(opcional)</em></span><input name="days" inputmode="numeric" value="${esc(i.days)}" placeholder="Ej: 15"></label>
       </div>
       <div><span class="mini-label">Estado</span>${seg('status', [['recovered', 'Recuperado'], ['active', 'En recuperación']], i.status)}</div>
       <label class="field mt"><span>Notas</span><textarea name="notes" rows="2" placeholder="Tratamiento, cómo pasó…">${esc(i.notes)}</textarea></label>

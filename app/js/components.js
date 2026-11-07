@@ -18,7 +18,7 @@ export function scoreHTML(m, big = false) {
   if (!o.known) return `<span class="score-unk">?<i>–</i>?</span>`;
   if (!o.scoreKnown) {
     const txt = o.winner === 'draw' ? 'Empate' : 'Ganó ' + (o.winner === 'home' ? 'local' : 'visit.');
-    return `<span class="score-win">${txt}</span>`;
+    return `<span class="score-win">${txt}${o.margin ? ' por ' + o.margin : ''}</span>`;
   }
   return `<span class="score ${big ? 'big' : ''} ${o.approx ? 'approx' : ''}">${o.approx ? '<i class="tilde">~</i>' : ''}${o.hg}<i>–</i>${o.ag}</span>`;
 }

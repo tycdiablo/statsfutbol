@@ -7,7 +7,8 @@ export const STATUS = {
 };
 
 export const POSITIONS = [
-  'Arquero', 'Defensor central', 'Lateral derecho', 'Lateral izquierdo', 'Carrilero',
+  'Arquero', 'Base', 'Ala', 'Pivote', 'Pivot',
+  'Defensor central', 'Lateral derecho', 'Lateral izquierdo', 'Carrilero',
   'Mediocampista defensivo', 'Mediocampista central', 'Mediocampista ofensivo', 'Enganche',
   'Extremo derecho', 'Extremo izquierdo', 'Segundo delantero', 'Delantero centro',
 ];
@@ -48,7 +49,7 @@ export function outcome(m) {
   if (!m || m.status !== 'finished') return { known: false };
   const r = m.result || {};
   if ((r.mode === 'exact' || r.mode === 'approx') && isNum(r.home) && isNum(r.away)) return fromScore(r.home, r.away, r.mode === 'approx');
-  if (r.mode === 'winner' && r.winner) return { known: true, scoreKnown: false, winner: r.winner };
+  if (r.mode === 'winner' && r.winner) return { known: true, scoreKnown: false, winner: r.winner, margin: r.margin || null };
   return { known: false };
 }
 
@@ -235,12 +236,19 @@ export function achievements(t) {
 // ── Tournaments ────────────────────────────────────────────
 function row(id) { return { teamId: id, pj: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0, sm: 0, form: [], partial: false, approx: false }; }
 
-export function standings(tour, all, { projected = false } = {}) {
+// Tabla de posiciones. Opciones:
+//  group: solo equipos y partidos de ese grupo (formato con grupos)
+//  upTo:  tabla tal como estaba hasta la fecha N
+//  projected: incluye predicciones de partidos pendientes
+export function standings(tour, all, { projected = false, group = null, upTo = null } = {}) {
   const P = tour.points || { w: 3, d: 1, l: 0 };
   const rows = new Map();
   const ensure = (id) => { if (!id) return null; if (!rows.has(id)) rows.set(id, row(id)); return rows.get(id); };
-  (tour.teamIds || []).forEach(ensure);
-  const ms = all.filter((m) => m.tournamentId === tour.id).sort(byDateAsc);
+  (tour.teamIds || []).filter((id) => !group || tour.groupOf?.[id] === group).forEach(ensure);
+  const ms = all
+    .filter((m) => m.tournamentId === tour.id && (m.stage || 'league') !== 'playoff'
+      && (!group || m.group === group) && (upTo == null || +m.round <= upTo))
+    .sort(byDateAsc);
   for (const m of ms) {
     let o = outcome(m);
     let pred = false;
@@ -250,6 +258,12 @@ export function standings(tour, all, { projected = false } = {}) {
     if (!h || !a) continue;
     apply(h, o.winner === 'home' ? 'W' : o.winner === 'draw' ? 'D' : 'L', o, true, P, pred);
     apply(a, o.winner === 'away' ? 'W' : o.winner === 'draw' ? 'D' : 'L', o, false, P, pred);
+  }
+  // ajustes manuales de puntos (sanciones / bonus)
+  for (const r of rows.values()) {
+    r.base = r.pts;
+    r.adj = tour.adjust?.[r.teamId] || 0;
+    r.pts = r.base + r.adj;
   }
   return sortRows([...rows.values()]);
 }
@@ -338,4 +352,13 @@ export function roundRobin(ids, double) {
   }
   if (double) rounds.push(...rounds.map((p) => p.map(([a, b]) => [b, a])));
   return rounds;
+}
+
+export const SURFACES = { sintetico: 'Sintético', parquet: 'Parquet / madera', pasto: 'Pasto', cemento: 'Cemento', otro: 'Otro' };
+
+// Texto corto con superficie y tamaño de una cancha guardada
+export function venueDetail(name, venues) {
+  const v = (venues || []).find((x) => x.name.toLowerCase() === String(name || '').toLowerCase());
+  if (!v) return '';
+  return [SURFACES[v.surface], v.size ? `cancha de ${v.size}` : ''].filter(Boolean).join(' · ');
 }

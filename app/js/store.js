@@ -2,7 +2,7 @@
 // copy in localStorage; cloud sync pushes "dirty" parts to Firestore.
 import { uid as newId } from './util.js';
 
-export const COLS = ['teams', 'matches', 'tournaments', 'clubs', 'injuries', 'notes', 'goals'];
+export const COLS = ['teams', 'matches', 'tournaments', 'clubs', 'injuries', 'notes', 'goals', 'venues'];
 export const PARTS = ['profile', 'meta', ...COLS];
 
 const listeners = new Set();
@@ -14,7 +14,7 @@ let syncHook = null;
 function empty() {
   return {
     profile: { name: '', nickname: '', position: '', position2: '', number: '', foot: '', birth: '', height: '', bio: '', photo: '', updatedAt: 0 },
-    teams: [], matches: [], tournaments: [], clubs: [], injuries: [], notes: [], goals: [],
+    teams: [], matches: [], tournaments: [], clubs: [], injuries: [], notes: [], goals: [], venues: [],
     meta: { deleted: {}, updatedAt: 0 },
   };
 }

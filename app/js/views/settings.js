@@ -2,7 +2,8 @@ import * as store from '../store.js';
 import { esc, download, todayISO } from '../util.js';
 import { ic, googleLogo } from '../icons.js';
 import { crest, seg, confirmDialog, toast, avatar } from '../ui.js';
-import { openTeamForm } from '../forms.js';
+import { openTeamForm, openVenueForm } from '../forms.js';
+import { SURFACES } from '../stats.js';
 import { session } from '../session.js';
 
 const SYNC_TXT = {
@@ -23,6 +24,7 @@ export default {
     try { theme = localStorage.getItem('sf:theme') || 'system'; } catch {}
     const teams = s.teams.slice().sort((a, b) => a.name.localeCompare(b.name));
     const counts = { matches: s.matches.length, teams: s.teams.length, tournaments: s.tournaments.length, notes: s.notes.length };
+    const venues = [...s.venues].sort((a, b) => a.name.localeCompare(b.name));
     return `
     <section class="card account-card">
       ${u ? `
@@ -51,6 +53,11 @@ export default {
         const n = s.matches.filter((m) => m.homeId === t.id || m.awayId === t.id).length;
         return `<div class="team-row">${crest(t, 'sm')}<span><b>${esc(t.name)}</b><small class="muted">${n} partido${n === 1 ? '' : 's'}</small></span><button class="icon-btn sm" data-act="editteam" data-id="${t.id}" aria-label="Editar">${ic('edit')}</button><button class="icon-btn sm" data-act="delteam" data-id="${t.id}" aria-label="Borrar">${ic('trash')}</button></div>`;
       }).join('')}</div>` : '<p class="muted small">Los equipos que crees al cargar partidos aparecen acá.</p>'}
+    </section>
+
+    <section class="card">
+      <div class="sec-head flat"><h3 class="card-title">${ic('pin')} Canchas <span class="count">${venues.length}</span></h3><button class="link" data-act="newvenue">${ic('plus', 'inline')} Nueva</button></div>
+      ${venues.length ? `<div class="team-list">${venues.map((v) => `<div class="team-row"><span class="venue-ico">${ic('pin')}</span><span><b>${esc(v.name)}</b><small class="muted">${[SURFACES[v.surface], v.size ? `cancha de ${v.size}` : ''].filter(Boolean).map(esc).join(' · ') || 'Sin superficie ni tamaño'}</small></span><button class="icon-btn sm" data-act="editvenue" data-id="${v.id}" aria-label="Editar">${ic('edit')}</button></div>`).join('')}</div>` : '<p class="muted small">Se guardan solas cuando cargás un partido o importás un fixture. Después podés poner si es de pasto sintético, parquet o pasto, y si es cancha de 5, 7, 9 u 11.</p>'}
     </section>
 
     <section class="card">
@@ -88,6 +95,8 @@ export default {
       if (used) { toast('Este equipo se usa en partidos o torneos. Borralos primero o editá el equipo.'); return; }
       if (await confirmDialog('Se borra el equipo.', { ok: 'Borrar', danger: true })) store.remove('teams', id);
     },
+    newvenue: () => openVenueForm(),
+    editvenue: (el) => openVenueForm({ venue: store.find('venues', el.dataset.id) }),
     export: () => { download(`statsfutbol-backup-${todayISO()}.json`, store.exportJSON()); toast('Backup descargado', { type: 'ok' }); },
     import: () => {
       const inp = document.createElement('input');

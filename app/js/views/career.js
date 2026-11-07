@@ -104,7 +104,7 @@ export default {
 
     ${sectionHead(`Lesiones <span class="count">${s.injuries.length + matchInjuries.length}</span>`, `<button class="link" data-act="addinj">${ic('plus', 'inline')} Lesión</button>`)}
     ${s.injuries.length || matchInjuries.length ? `<div class="card list-card">
-      ${s.injuries.slice().sort(byDateDesc).map((i) => `<button class="inj-row" data-act="editinj" data-id="${i.id}"><span class="inj-ico">🩹</span><div><b>${esc(i.type)}</b><span class="muted small">${fmtDate(i.date)}${i.days ? ` · ${i.days} días de baja` : ''}</span></div>${i.status === 'active' ? '<span class="chip st-susp">En recuperación</span>' : '<span class="chip">Recuperado</span>'}</button>`).join('')}
+      ${s.injuries.slice().sort(byDateDesc).map((i) => `<button class="inj-row" data-act="editinj" data-id="${i.id}"><span class="inj-ico">🩹</span><div><b>${esc(i.type)}</b><span class="muted small">${[i.date ? fmtDate(i.date) : '', i.days ? `${i.days} días de baja` : ''].filter(Boolean).join(' · ') || 'Sin fecha'}</span></div>${i.status === 'active' ? '<span class="chip st-susp">En recuperación</span>' : '<span class="chip">Recuperado</span>'}</button>`).join('')}
       ${matchInjuries.map((e) => `<a class="inj-row" href="#/partido/${e.match.id}"><span class="inj-ico">⚽</span><div><b>${esc(e.note || 'Lesión en partido')}</b><span class="muted small">${fmtDate(e.match.date)}${e.minute !== '' && e.minute != null ? ` · min ${e.minute}` : ''} · en partido</span></div>${ic('chev', 'muted')}</a>`).join('')}
     </div>` : '<div class="card cta-card"><p>Sin lesiones registradas. ¡Que siga así! 💪</p></div>'}
 

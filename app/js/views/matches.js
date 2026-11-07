@@ -2,9 +2,10 @@ import * as store from '../store.js';
 import { esc, fmtDate, fmtMonth, byDateAsc, byDateDesc, todayISO, relDays, clone } from '../util.js';
 import { ic } from '../icons.js';
 import { crest, empty, seg, confirmDialog, toast, choiceDialog } from '../ui.js';
-import { isMine, outcome, predOutcome, myResult, RES_TEXT, EVENT_TYPES, STATUS } from '../stats.js';
+import { isMine, outcome, predOutcome, myResult, RES_TEXT, EVENT_TYPES, STATUS, venueDetail } from '../stats.js';
 import { matchCard, scoreHTML, statusChip, resPill } from '../components.js';
 import { openMatchForm } from '../forms.js';
+import { openImportSheet } from '../import.js';
 
 const F = { status: 'all', kind: 'all', who: 'all', q: '' };
 
@@ -44,6 +45,7 @@ export const MatchesView = {
     const cnt = (st) => all.filter((m) => m.status === st).length;
     const overdue = upcomingL.filter((m) => m.date && m.date < today && isMine(m)).length;
     return `
+      <div class="row-actions import-row"><button class="btn ghost sm" data-act="import">${ic('upload')} Importar fixture del club</button></div>
       <div class="search">${ic('search')}<input type="search" placeholder="Buscar equipo, torneo, cancha…" value="${esc(F.q)}" data-search></div>
       <div class="filters">
         ${chip('status', 'all', 'Todos', all.length)}${chip('status', 'scheduled', 'Por jugarse', cnt('scheduled'))}${chip('status', 'finished', 'Finalizados', cnt('finished'))}${chip('status', 'suspended', 'Suspendidos', cnt('suspended'))}
@@ -73,6 +75,7 @@ export const MatchesView = {
   actions: {
     filter: (el) => { F[el.dataset.k] = el.dataset.v; window.__rerender?.(); },
     new: () => openMatchForm(),
+    import: () => openImportSheet({ onDone: () => window.__rerender() }),
   },
 };
 
@@ -114,7 +117,7 @@ export const MatchDetailView = {
       <div class="sb-info">
         <span>${ic('cal', 'inline')} ${m.date ? fmtDate(m.date, true) : 'Sin fecha'}${m.date && m.status === 'scheduled' ? ` (${relDays(m.date, m.time)})` : ''}</span>
         ${m.time ? `<span>${ic('clock', 'inline')} ${esc(m.time)}</span>` : ''}
-        ${m.venue ? `<span>${ic('pin', 'inline')} ${esc(m.venue)}</span>` : ''}
+        ${m.venue ? `<span>${ic('pin', 'inline')} ${esc(m.venue)}${venueDetail(m.venue, store.list('venues')) ? ` <small class="muted">· ${esc(venueDetail(m.venue, store.list('venues')))}</small>` : ''}</span>` : ''}
         ${m.competition ? `<span>${ic('trophy', 'inline')} ${tour ? `<a href="#/torneo/${tour.id}">${esc(m.competition)}</a>` : esc(m.competition)}${m.round ? ` · Fecha ${esc(m.round)}` : ''}</span>` : ''}
       </div>
       ${m.status === 'finished' && m.result?.mode !== 'exact' ? `<p class="sb-note">${resultModeTxt}</p>` : ''}
