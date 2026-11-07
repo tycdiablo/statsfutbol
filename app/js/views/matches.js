@@ -6,7 +6,7 @@ import { isMine, outcome, predOutcome, myResult, RES_TEXT, EVENT_TYPES, STATUS, 
 import { matchCard, scoreHTML, statusChip, resPill } from '../components.js';
 import { openMatchForm } from '../forms.js';
 import { pitchSVG, kitById, openLineupEditor, openKitsManager } from '../lineup.js';
-import { addPhoto, getPhotoURL, removePhoto } from '../media.js';
+import { addPhoto, getPhotoURL, removePhoto, photosSync } from '../media.js';
 import { matchPayload, shareLink } from '../share.js';
 import { openImportSheet } from '../import.js';
 
@@ -197,6 +197,7 @@ export const MatchDetailView = {
           try { ids.push(await addPhoto(f)); } catch (e) { console.warn(e); toast('No se pudo guardar una foto', { type: 'error' }); }
         }
         store.upsert('matches', { id, photos: ids });
+        photosSync();
         window.__rerender();
       };
       inp.click();

@@ -11,6 +11,7 @@ import Career from './views/career.js';
 import Notes from './views/notes.js';
 import Settings from './views/settings.js';
 import Shared from './views/shared.js';
+import { photosSync } from './media.js';
 
 const routes = {
   inicio: Home, partidos: MatchesView, partido: MatchDetailView, torneos: ToursView,
@@ -173,6 +174,7 @@ async function pullAndMerge() {
     const remote = await cloud.pull(session.user.uid);
     if (Object.keys(remote).length) store.mergeIn(remote);
   } catch (e) { console.warn('pull', e); setSync('error'); }
+  photosSync();
 }
 
 session.syncNow = async () => {

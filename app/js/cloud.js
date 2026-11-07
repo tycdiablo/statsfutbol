@@ -81,3 +81,20 @@ export async function getShare(id) {
   if (!snap.exists()) return null;
   return JSON.parse(snap.data().json);
 }
+
+// ── Fotos de partidos: users/{uid}/photos/{id} ────────────
+export async function uploadPhoto(uid, id, dataURL) {
+  const { fsM, db } = fb;
+  await fsM.setDoc(fsM.doc(db, 'users', uid, 'photos', id), { data: dataURL, createdAt: Date.now() });
+}
+
+export async function downloadPhoto(uid, id) {
+  const { fsM, db } = fb;
+  const snap = await fsM.getDoc(fsM.doc(db, 'users', uid, 'photos', id));
+  return snap.exists() ? snap.data().data : null;
+}
+
+export async function deletePhoto(uid, id) {
+  const { fsM, db } = fb;
+  await fsM.deleteDoc(fsM.doc(db, 'users', uid, 'photos', id));
+}
