@@ -234,14 +234,23 @@ function renderTab(tab, t, s, ms) {
     if (!fm.length) {
       return empty('list', 'Sin partidos', 'Generá el fixture automático o cargá partidos a mano.', `<div class="row-actions center"><button class="btn primary" data-act="gen">${ic('spark')} Generar fixture</button><button class="btn ghost" data-act="addmatch">${ic('plus')} Partido</button></div>`);
     }
-    const groups = new Map();
+    // primero la fecha; dentro de cada fecha, los partidos de cada grupo
+    const byRound = new Map();
     for (const m of fm.slice().sort(byDateAsc)) {
-      const k = `${m.group ? `Grupo ${m.group} · ` : ''}${m.round ? `Fecha ${m.round}` : 'Sin fecha asignada'}`;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(m);
+      const k = m.round ? `Fecha ${m.round}` : 'Sin fecha asignada';
+      if (!byRound.has(k)) byRound.set(k, []);
+      byRound.get(k).push(m);
     }
+    const sortRound = (a, b) => (parseInt(a[0].replace(/\D/g, ''), 10) || 999) - (parseInt(b[0].replace(/\D/g, ''), 10) || 999);
     return `<button class="btn ghost block" data-act="addmatch">${ic('plus')} Agregar partido al torneo</button>
-      ${[...groups.entries()].map(([k, list]) => `<h3 class="group-title">${esc(k)}</h3><div class="cards">${list.map((m) => matchCard(m, { compact: true })).join('')}</div>`).join('')}`;
+      ${[...byRound.entries()].sort(sortRound).map(([k, list]) => {
+        const groupsIn = [...new Set(list.map((m) => m.group || ''))].sort();
+        const inner = groupsIn.map((g) => {
+          const gl = list.filter((m) => (m.group || '') === g);
+          return `${g ? `<div class="grp-head">Grupo ${esc(g)}</div>` : ''}<div class="cards">${gl.map((m) => matchCard(m, { compact: true })).join('')}</div>`;
+        }).join('');
+        return `<h3 class="group-title">${esc(k)}</h3>${inner}`;
+      }).join('')}`;
   }
 
   if (tab === 'po') return playoffsTab(t, s);

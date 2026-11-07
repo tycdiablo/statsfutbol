@@ -796,3 +796,4 @@ body.welcome-on #app { visibility: hidden; }
 .po-names button.tbd { font-style: italic; color: var(--muted); }
 .po-names button.on.tbd { color: #fff; }
 .chip.nc { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); border-color: transparent; }
+.grp-head { font-family: var(--display); font-size: 14px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--accent-text); margin: 10px 2px 6px; }
