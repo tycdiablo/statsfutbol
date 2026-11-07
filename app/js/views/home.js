@@ -3,7 +3,7 @@ import { esc, fmtDate, relDays, fmtNum, byDateDesc } from '../util.js';
 import { ic } from '../icons.js';
 import { avatar, crest, empty } from '../ui.js';
 import { totals, form, streaks, upcoming, playedMatches, predictionAccuracy, achievements, STAT_LABELS, myResult, RES_TEXT, rivalId, standings } from '../stats.js';
-import { matchCard, resPill, statTile, progressBar, sectionHead } from '../components.js';
+import { matchCard, resPill, statTile, progressBar, sectionHead, tourBadge } from '../components.js';
 import { openMatchForm, openProfileForm, openNoteEditor, openTournamentForm, openGoalForm } from '../forms.js';
 import { session } from '../session.js';
 
@@ -145,7 +145,7 @@ export function tourMini(tr, s) {
   const done = ms.filter((m) => m.status === 'finished').length;
   const my = rows.find((r) => r.teamId === tr.myTeamId);
   return `<a class="card tour-mini" href="#/torneo/${tr.id}">
-    <span class="tour-ico">${ic('trophy')}</span>
+    ${tourBadge(tr)}
     <div class="tm-main"><b>${esc(tr.name)}</b><span class="muted small">${done}/${ms.length} partidos jugados</span>${progressBar(ms.length ? done / ms.length : 0, 'thin')}</div>
     ${pos ? `<div class="tm-pos"><b>${pos}°</b><span>${my?.pts ?? 0} pts</span></div>` : ''}
   </a>`;

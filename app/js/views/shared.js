@@ -1,5 +1,6 @@
 import { esc, fmtDate, fmtNum } from '../util.js';
 import { ic } from '../icons.js';
+import { tourBadge } from '../components.js';
 import { crest, toast } from '../ui.js';
 import * as cloud from '../cloud.js';
 import * as store from '../store.js';
@@ -141,7 +142,7 @@ function tournamentView(data, T) {
   const po = playoffs.length ? `<h3 class="group-title">Playoffs</h3>${playoffs.map((m) => `<div class="card sh-po">${matchLine(m)}</div>`).join('')}` : '';
   return `
     <section class="card tour-head-card">
-      <span class="tour-ico big">${ic('trophy')}</span>
+      ${tourBadge(t, 'big')}
       <h2>${esc(t.name || 'Torneo')}</h2>
       <p class="muted small">${[t.season, t.format === 'groups' ? 'Grupos' : 'Liga', t.playoff ? 'con playoffs' : '', `${(data.teams || []).length} equipos`].filter(Boolean).map(esc).join(' · ')}</p>
       <div class="sh-teams">${(data.teams || []).map((tm) => `<span class="sh-team">${crest(tm, 'xs')}${esc(tm.name)}</span>`).join('')}</div>

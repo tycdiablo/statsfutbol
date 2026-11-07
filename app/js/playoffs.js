@@ -96,7 +96,8 @@ export function pendingStage(tour, all) {
 }
 
 // Equipos que pasan a playoffs, por orden de cruce (1º de cada grupo primero)
-export function playoffSeeds(tour, all) {
+export function playoffSeeds(tour0, all) {
+  const tour = withGroups(tour0, all);
   if (tour.format === 'groups') {
     const letters = groupLetters(tour);
     const tables = Object.fromEntries(letters.map((g) => [g, standings(tour, all, { group: g }).filter((r) => !isWithdrawn(tour, r.teamId))]));
@@ -204,7 +205,8 @@ function poisson(l) {
   return k - 1;
 }
 
-export function simulateTournament(tour, all, { runs = 4000, usePredictions = true } = {}) {
+export function simulateTournament(tour0, all, { runs = 4000, usePredictions = true } = {}) {
+  const tour = withGroups(tour0, all);
   const P = tour.points || { w: 3, d: 1, l: 0 };
   const base = standings(tour, all);
   const ids = tour.teamIds || [];
@@ -357,4 +359,26 @@ export function championOf(tourId, all) {
   const final = rounds[rounds.length - 1]?.matches[0];
   if (!final || final.status !== 'finished') return '';
   return winnerId(final);
+}
+
+// Asignación de grupos: la guardada, o la que sale de los partidos (para torneos viejos)
+export function withGroups(tour, all) {
+  if (tour.format !== 'groups') return tour;
+  if (Object.keys(tour.groupOf || {}).length) return tour;
+  const own = all.filter((m) => m.tournamentId === tour.id && (m.stage || 'league') !== 'playoff');
+  const groupOf = {};
+  for (const m of own) if (m.group) { groupOf[m.homeId] = m.group; groupOf[m.awayId] = m.group; }
+  if (!Object.keys(groupOf).length && own.length) {
+    // sin letra: cada grupo es un conjunto de equipos que juegan entre sí
+    const parent = {};
+    const find = (x) => { if (parent[x] === undefined) parent[x] = x; return parent[x] === x ? x : (parent[x] = find(parent[x])); };
+    for (const m of own) { const a = find(m.homeId), b = find(m.awayId); if (a !== b) parent[a] = b; }
+    const roots = [];
+    for (const id of tour.teamIds || []) {
+      const r = find(id);
+      if (!roots.includes(r)) roots.push(r);
+    }
+    for (const id of tour.teamIds || []) groupOf[id] = LETTERS[roots.indexOf(find(id))] || 'A';
+  }
+  return { ...tour, groupOf };
 }

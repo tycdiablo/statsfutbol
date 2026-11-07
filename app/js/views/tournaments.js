@@ -3,9 +3,9 @@ import { esc, fmtDate, byDateAsc, fmtNum } from '../util.js';
 import { ic } from '../icons.js';
 import { crest, empty, confirmDialog, toast, teamName } from '../ui.js';
 import { standings, totals, outcome, predOutcome, isMine } from '../stats.js';
-import { matchCard, resPill, statTile, progressBar } from '../components.js';
+import { matchCard, resPill, statTile, progressBar, tourBadge } from '../components.js';
 import { openTournamentForm, openMatchForm } from '../forms.js';
-import { generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
+import { withGroups, generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
 import { tourMini } from './home.js';
 import { shareLink, tournamentPayload } from '../share.js';
 
@@ -36,7 +36,8 @@ const SIM = {};
 const maxRoundOf = (ms) => Math.max(0, ...ms.filter((m) => (m.stage || 'league') !== 'playoff').map((m) => +m.round || 0));
 
 // Una tabla por grupo, o una sola si es liga
-function tablesFor(t, all, opts = {}) {
+function tablesFor(t0, all, opts = {}) {
+  const t = withGroups(t0, all);
   if (t.format === 'groups') {
     return groupLetters(t).map((g) => ({ label: `Grupo ${g}`, rows: standings(t, all, { ...opts, group: g }) }));
   }
@@ -61,7 +62,7 @@ export const TourDetailView = {
     const champ = t.playoff ? championOf(t.id, s.matches) : '';
     return `
       <section class="tour-head">
-        <span class="tour-ico big">${ic('trophy')}</span>
+        ${tourBadge(t, 'big')}
         <div><h2>${esc(t.name)}</h2><span class="muted small">${[t.season, t.official === false ? 'No oficial' : 'Oficial', `${(t.teamIds || []).length} equipos`, fmt, t.double ? 'Ida y vuelta' : 'Solo ida', t.playoff ? 'Con playoffs' : ''].filter(Boolean).map(esc).join(' · ')}</span>
         ${progressBar(stageMs.length ? done / stageMs.length : 0, 'thin')}<span class="muted small">${done} de ${stageMs.length} partidos de la fase regular</span>
         ${champ ? `<span class="champ-tag">🏆 Campeón: ${esc(teamName(champ))}</span>` : ''}</div>

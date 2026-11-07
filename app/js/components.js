@@ -91,3 +91,10 @@ export function barChart(data) {
   </div>
   <div class="legend"><span><i class="cb-g"></i>Goles</span><span><i class="cb-a"></i>Asistencias</span></div>`;
 }
+
+// Icono del torneo: su logo si tiene, o el trofeo
+export function tourBadge(t, size = '') {
+  return t?.logo
+    ? `<span class="tour-ico ${size} has-logo"><img src="${t.logo}" alt=""></span>`
+    : `<span class="tour-ico ${size}">${ic('trophy')}</span>`;
+}

@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { esc, num, int0, todayISO, clone, uid, isNum, titleCase } from './util.js';
 import { ic } from './icons.js';
 import { openSheet, toast, confirmDialog, pickImage, crest, avatar, seg, stepper, refreshShow, teamName } from './ui.js';
+import { tourBadge } from './components.js';
 import { EVENT_TYPES, POSITIONS, STAT_LABELS, years, SURFACES } from './stats.js';
 import { generateTourFixture, materialize, hasStageFixture, nextPow2, roundLabel } from './playoffs.js';
 
@@ -375,8 +376,9 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     name: '', season: todayISO().slice(0, 4), double: false, points: { w: 3, d: 1, l: 0 }, teamIds: [], myTeamId: '',
     official: true, notes: '', promo: 0, releg: 0, format: 'league', groups: 2, advance: 1,
     playoff: false, playoffSize: 4, showTrend: false, adjust: {}, withdrawn: {},
-    startDate: '', everyDays: 7, defaultTime: '', ...clone(tour || {}),
+    startDate: '', everyDays: 7, defaultTime: '', logo: '', ...clone(tour || {}),
   };
+  let logo = t.logo || '';
   let teamIds = [...t.teamIds];
   let myTeamId = t.myTeamId;
   const adjust = { ...(t.adjust || {}) };
@@ -385,6 +387,10 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
   const sh = openSheet({
     title: tour ? 'Editar torneo' : 'Nuevo torneo', cls: 'tall',
     body: `<form class="form">
+      <div class="logo-pick">
+        <button type="button" class="logo-btn" data-tlogo>${tourBadge({ logo }, 'xl')}<span class="logo-badge">${ic('camera')}</span></button>
+        <div class="logo-actions"><button type="button" class="link" data-tlogo>${logo ? 'Cambiar logo' : 'Agregar logo del torneo'}</button><button type="button" class="link muted" data-tnologo ${logo ? '' : 'hidden'}>Quitar</button></div>
+      </div>
       <section class="fs">
         <label class="field"><span>Nombre</span><input name="name" value="${esc(t.name)}" placeholder="Ej: Liga del barrio 2026" maxlength="50"></label>
         <div class="grid2">
@@ -457,6 +463,12 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     footer: footer(tour ? 'Guardar' : 'Crear torneo'),
   });
   const form = bindForm(sh, save);
+  const paintLogo = () => {
+    sh.el.querySelector('.logo-btn').innerHTML = tourBadge({ logo }, 'xl') + `<span class="logo-badge">${ic('camera')}</span>`;
+    sh.el.querySelector('[data-tnologo]').hidden = !logo;
+  };
+  sh.el.querySelectorAll('[data-tlogo]').forEach((b) => b.addEventListener('click', async () => { const img = await pickImage({ max: 256 }); if (img) { logo = img; paintLogo(); } }));
+  sh.el.querySelector('[data-tnologo]').addEventListener('click', () => { logo = ''; paintLogo(); });
   const box = sh.el.querySelector('[data-teams]');
   const bracketBox = sh.el.querySelector('[data-bracket]');
 
@@ -526,7 +538,7 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
       points: { w: int0(v('pw')), d: int0(v('pd')), l: int0(v('pl')) },
       promo: int0(v('promo')), releg: int0(v('releg')),
       format, groups, advance, playoff, playoffSize, showTrend: form.elements.showTrend.checked,
-      startDate: v('startDate'), everyDays: Math.max(1, int0(v('everyDays')) || 7), defaultTime: v('defaultTime'),
+      logo, startDate: v('startDate'), everyDays: Math.max(1, int0(v('everyDays')) || 7), defaultTime: v('defaultTime'),
       adjust: adj, withdrawn: wd, teamIds, myTeamId, notes: v('notes').trim(),
     });
     // equipos retirados: se quitan los partidos que faltan jugar

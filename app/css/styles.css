@@ -781,3 +781,5 @@ body.welcome-on #app { visibility: hidden; }
 .sh-round { padding: 4px 14px; margin-bottom: 8px; }
 .tour-head-card { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .tour-head-card h2 { font-family: var(--display); font-size: 26px; text-transform: uppercase; }
+.tour-ico.has-logo { background: none; padding: 0; overflow: hidden; }
+.tour-ico.has-logo img { width: 100%; height: 100%; object-fit: contain; }
