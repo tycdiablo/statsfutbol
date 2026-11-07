@@ -5,7 +5,7 @@ import { crest, empty, confirmDialog, toast, teamName } from '../ui.js';
 import { standings, totals, outcome, predOutcome, isMine } from '../stats.js';
 import { matchCard, resPill, statTile, progressBar, tourBadge } from '../components.js';
 import { openTournamentForm, openMatchForm } from '../forms.js';
-import { withGroups, generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
+import { withGroups, previewBracket, generateTourFixture, createPlayoffs, bracketRounds, championOf, simulateTournament, groupLetters, pendingStage, playoffSeeds, hasStageFixture, isWithdrawn } from '../playoffs.js';
 import { tourMini } from './home.js';
 import { shareLink, tournamentPayload } from '../share.js';
 
@@ -165,23 +165,29 @@ function breakdown(t, r) {
   return `${parts.join(' · ')} → <b>${r.pts} pts</b>`;
 }
 
+// Columnas visibles de la tabla (el usuario las elige en Editar torneo)
+export const COL_LABELS = { pj: 'Partidos jugados (PJ)', wde: 'Ganados, empatados y perdidos (G-E-P)', gf: 'Goles a favor y en contra (GF-GC)', dg: 'Diferencia de gol (DG)', form: 'Forma (últimos resultados)' };
+export const colsOf = (t) => ({ pj: true, wde: true, gf: true, dg: true, form: true, ...(t.cols || {}) });
+
 function table(t, rows, { prevRows = null, expanded = new Set() } = {}) {
   if (!rows.length) return '<p class="muted pad">Agregá equipos al torneo para ver la tabla.</p>';
+  const C = colsOf(t);
   const prevPos = prevRows ? Object.fromEntries(prevRows.map((r, i) => [r.teamId, i])) : null;
   const showTrend = !!(t.showTrend && prevPos);
+  const count = 3 + (C.pj ? 1 : 0) + (C.wde ? 3 : 0) + (C.gf ? 2 : 0) + (C.dg ? 1 : 0) + (C.form ? 1 : 0);
+  const head = `<th>#</th><th class="tl">Equipo</th><th>Pts</th>${C.pj ? '<th>PJ</th>' : ''}${C.wde ? '<th>G</th><th>E</th><th>P</th>' : ''}${C.gf ? '<th>GF</th><th>GC</th>' : ''}${C.dg ? '<th>DG</th>' : ''}${C.form ? '<th>Forma</th>' : ''}`;
   return `<div class="table-wrap"><table class="standings">
-    <thead><tr><th>#</th><th class="tl">Equipo</th><th>Pts</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th class="hide-xs">GF</th><th class="hide-xs">GC</th><th>DG</th><th class="hide-sm">Forma</th></tr></thead>
+    <thead><tr>${head}</tr></thead>
     <tbody>${rows.map((r, i) => {
       const tm = store.find('teams', r.teamId);
       const d = showTrend && r.teamId in prevPos ? prevPos[r.teamId] - i : 0;
       const open = expanded.has(r.teamId);
+      const cells = `${C.pj ? `<td>${r.pj}</td>` : ''}${C.wde ? `<td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>` : ''}${C.gf ? `<td>${r.gf}</td><td>${r.ga}</td>` : ''}${C.dg ? `<td>${r.gf - r.ga > 0 ? '+' : ''}${r.gf - r.ga}</td>` : ''}${C.form ? `<td class="form-cell">${r.form.slice(-5).map((x) => resPill(x, 'xs')).join('')}</td>` : ''}`;
       return `<tr class="row-click ${r.teamId === t.myTeamId ? 'mine' : ''} ${zoneCls(i, rows.length, t)}" data-act="expand" data-id="${r.teamId}">
         <td class="pos"><span>${i + 1}</span>${d ? `<i class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'}${Math.abs(d)}</i>` : ''}</td>
         <td class="tl"><div class="team-cell">${crest(tm, 'xs')}<span>${esc(tm?.name || '?')}</span>${r.partial ? '<sup title="Hay partidos donde solo se sabe el ganador">*</sup>' : ''}${r.approx ? '<sup title="Incluye resultados aproximados">~</sup>' : ''}${r.adj ? `<sup class="adj-sup" title="Ajuste de puntos">${r.adj > 0 ? '+' : ''}${r.adj}</sup>` : ''}</div></td>
-        <td class="pts">${r.pts}</td><td>${r.pj}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td>
-        <td class="hide-xs">${r.gf}</td><td class="hide-xs">${r.ga}</td><td>${r.gf - r.ga > 0 ? '+' : ''}${r.gf - r.ga}</td>
-        <td class="hide-sm form-cell">${r.form.slice(-5).map((x) => resPill(x, 'xs')).join('')}</td>
-      </tr>${open ? `<tr class="bd"><td colspan="11">${breakdown(t, r)}</td></tr>` : ''}`;
+        <td class="pts">${r.pts}</td>${cells}
+      </tr>${open ? `<tr class="bd"><td colspan="${count}">${breakdown(t, r)}</td></tr>` : ''}`;
     }).join('')}</tbody></table></div>`;
 }
 
@@ -301,6 +307,15 @@ function renderTab(tab, t, s, ms) {
 function playoffsTab(t, s) {
   const rounds = bracketRounds(t.id, s.matches);
   if (!rounds.length) {
+    const prov = previewBracket(t, s.matches);
+    if (prov.length) {
+      const pend0 = pendingStage(t, s.matches);
+      return `<div class="bp-note">Cuadro provisorio. Se completa con los equipos reales cuando se generen los playoffs${pend0 ? ` (faltan ${pend0} partidos de la fase regular)` : ''}.</div>
+        <div class="bracket-scroll"><div class="bracket">${prov.map((rd) => `<div class="br-col"><h4>${esc(rd.label)}</h4>${rd.matches.map(bracketCard).join('')}</div>`).join('')}</div></div>
+        <button class="btn primary block mt" data-act="genpo" ${pendingStage(t, s.matches) ? 'disabled' : ''}>${ic('spark')} Generar cuadro con los equipos</button>`;
+    }
+  }
+  if (!rounds.length) {
     const pend = pendingStage(t, s.matches);
     const seeds = playoffSeeds(t, s.matches);
     return `<div class="card cta-card"><h3 class="card-title">${ic('trophy')} Playoffs</h3>
@@ -318,6 +333,7 @@ function bracketCard(m) {
   const h = store.find('teams', m.homeId), a = store.find('teams', m.awayId);
   const o = outcome(m);
   const row = (team, side, label) => {
+    if (!team) label = (side === 'home' ? m.homeId : m.awayId) || label;
     const won = o.known && o.winner === side;
     const score = o.known && o.scoreKnown ? (side === 'home' ? o.hg : o.ag) : won ? '✓' : '';
     return `<div class="bc-row ${won ? 'won' : ''} ${team ? '' : 'tbd'}">${team ? crest(team, 'xs') : ''}<span>${team ? esc(team.name) : esc(label)}</span><b>${score}</b></div>`;

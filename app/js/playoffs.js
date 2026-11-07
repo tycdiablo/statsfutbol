@@ -67,7 +67,8 @@ export function generateTourFixture(tour) {
   const out = [];
   const ids = activeTeams(tour);
   if (tour.format === 'groups') {
-    const groupOf = assignGroups(ids, tour.groups || 2);
+    const given = tour.groupOf && ids.every((id) => tour.groupOf[id]);
+    const groupOf = given ? Object.fromEntries(ids.map((id) => [id, tour.groupOf[id]])) : assignGroups(ids, tour.groups || 2);
     for (const g of [...new Set(Object.values(groupOf))].sort()) {
       const gids = ids.filter((id) => groupOf[id] === g);
       roundRobin(gids, tour.double).forEach((pairs, i) =>
@@ -381,4 +382,29 @@ export function withGroups(tour, all) {
     for (const id of tour.teamIds || []) groupOf[id] = LETTERS[roots.indexOf(find(id))] || 'A';
   }
   return { ...tour, groupOf };
+}
+
+// Textos de los clasificados antes de que se sepan los equipos: "1° Grupo A", "2° Grupo B"
+export function seedLabels(tour0, all) {
+  const tour = withGroups(tour0, all);
+  if (tour.format === 'groups') {
+    const letters = groupLetters(tour);
+    const out = [];
+    for (let p = 0; p < (tour.advance || 1); p++) for (const g of letters) out.push(`${p + 1}° Grupo ${g}`);
+    return out;
+  }
+  return Array.from({ length: tour.playoffSize || 4 }, (_, i) => `${i + 1}° de la tabla`);
+}
+
+// Cuadro provisorio con los textos de arriba (no se guarda)
+export function previewBracket(tour, all) {
+  const labels = seedLabels(tour, all);
+  if (labels.length < 2) return [];
+  const rounds = bracketSkeleton(labels, () => uid());
+  const byId = new Map(rounds.flat().map((m) => [m.id, m]));
+  for (const rd of rounds) for (const m of rd) {
+    if (m.homeRef) { const s = byId.get(m.homeRef); m.homeId = `Ganador de ${s.label} ${s.k + 1}`; m.homeRef = ''; }
+    if (m.awayRef) { const s = byId.get(m.awayRef); m.awayId = `Ganador de ${s.label} ${s.k + 1}`; m.awayRef = ''; }
+  }
+  return rounds.map((rd) => ({ label: rd[0].label, matches: rd }));
 }

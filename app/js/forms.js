@@ -379,6 +379,8 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     startDate: '', everyDays: 7, defaultTime: '', logo: '', ...clone(tour || {}),
   };
   let logo = t.logo || '';
+  const grp = { ...(t.groupOf || {}) };
+  const C = { pj: true, wde: true, gf: true, dg: true, form: true, ...(t.cols || {}) };
   let teamIds = [...t.teamIds];
   let myTeamId = t.myTeamId;
   const adjust = { ...(t.adjust || {}) };
@@ -452,6 +454,8 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
 
       <section class="fs">
         <label class="fs-label">5 · Tabla</label>
+        <p class="hint">Elegí qué columnas ver. Puntos siempre se muestra. Si la tabla es ancha, en el celular se desliza a los costados.</p>
+        <div class="col-picks">${Object.entries({ pj: 'PJ', wde: 'G-E-P', gf: 'GF-GC', dg: 'DG', form: 'Forma' }).map(([k, l]) => `<label class="col-pick"><input type="checkbox" name="col_${k}" ${C[k] ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <label class="check-row"><input type="checkbox" name="showTrend" ${t.showTrend ? 'checked' : ''}><span><b>Mostrar cómo cambió cada equipo</b><br><small class="muted">Flechas con la posición de la fecha anterior.</small></span></label>
         ${!hasFixture ? `<label class="check-row mt"><input type="checkbox" name="gen" checked><span><b>Generar el fixture automáticamente</b><br><small class="muted">Se arma con los equipos que no estén retirados.</small></span></label>` : ''}
       </section>
@@ -476,10 +480,12 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     box.innerHTML = teamIds.length ? teamIds.map((id) => {
       const tm = store.find('teams', id);
       const out = !!withdrawn[id];
+      const isGroups = form.elements.format?.value === 'groups';
+      const gsel = isGroups ? `<select class="grp-sel" data-grp="${id}" aria-label="Grupo"><option value="">Auto</option>${'ABCDEFGH'.slice(0, int0(form.elements.groups?.value) || 2).split('').map((l) => `<option ${grp[id] === l ? 'selected' : ''}>${l}</option>`).join('')}</select>` : '';
       return `<div class="tt-item ${id === myTeamId ? 'mine' : ''} ${out ? 'out' : ''}" data-id="${id}">
         ${crest(tm, 'sm')}<span>${esc(tm?.name || '?')}${out ? ' <small class="muted">· retirado</small>' : ''}</span>
         <div class="adj-box">${stepper('adj_' + id, adjust[id] || 0, { min: -99, max: 99 })}</div>
-        <button type="button" class="chip-btn wd ${out ? 'on' : ''}" data-wd>${out ? 'Retirado' : 'Retirar'}</button>
+        ${gsel}<button type="button" class="chip-btn wd ${out ? 'on' : ''}" data-wd>${out ? 'Retirado' : 'Retirar'}</button>
         <button type="button" class="icon-btn sm star" data-star aria-label="Mi equipo">${ic('star')}</button>
         <button type="button" class="icon-btn sm" data-rm aria-label="Quitar">${ic('x')}</button></div>`;
     }).join('') : '<p class="hint">Todavía no agregaste equipos.</p>';
@@ -509,6 +515,10 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
     if (e.target.closest('[data-wd]')) { if (withdrawn[id]) delete withdrawn[id]; else withdrawn[id] = true; paint(); }
     if (e.target.closest('[data-rm]')) { teamIds = teamIds.filter((x) => x !== id); if (myTeamId === id) myTeamId = ''; delete withdrawn[id]; paint(); }
   });
+  box.addEventListener('change', (e) => {
+    if (e.target.dataset.grp) { if (e.target.value) grp[e.target.dataset.grp] = e.target.value; else delete grp[e.target.dataset.grp]; }
+  });
+  form.addEventListener('change', (e) => { if (e.target.name === 'format' || e.target.name === 'groups') paint(); });
   box.addEventListener('input', (e) => {
     const n = e.target.name || '';
     if (n.startsWith('adj_')) adjust[n.slice(4)] = parseInt(e.target.value, 10) || 0;
@@ -540,7 +550,16 @@ export function openTournamentForm({ tour = null, onSaved } = {}) {
       format, groups, advance, playoff, playoffSize, showTrend: form.elements.showTrend.checked,
       logo, startDate: v('startDate'), everyDays: Math.max(1, int0(v('everyDays')) || 7), defaultTime: v('defaultTime'),
       adjust: adj, withdrawn: wd, teamIds, myTeamId, notes: v('notes').trim(),
+      cols: { pj: form.elements.col_pj.checked, wde: form.elements.col_wde.checked, gf: form.elements.col_gf.checked, dg: form.elements.col_dg.checked, form: form.elements.col_form.checked },
+      ...(format === 'groups' && active.every((id) => grp[id]) ? { groupOf: Object.fromEntries(active.map((id) => [id, grp[id]])) } : {}),
     });
+    // si cambiaron los grupos, los partidos de la fase regular se reasignan
+    if (saved.format === 'groups' && saved.groupOf) {
+      for (const m of store.list('matches').filter((x) => x.tournamentId === saved.id && (x.stage || 'league') !== 'playoff')) {
+        const g1 = saved.groupOf[m.homeId], g2 = saved.groupOf[m.awayId];
+        if (g1 && g1 === g2 && m.group !== g1) store.upsert('matches', { id: m.id, group: g1 });
+      }
+    }
     // equipos retirados: se quitan los partidos que faltan jugar
     if (tour) {
       const removed = store.list('matches').filter((m) => m.tournamentId === saved.id && m.status === 'scheduled'

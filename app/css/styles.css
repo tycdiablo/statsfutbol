@@ -783,3 +783,7 @@ body.welcome-on #app { visibility: hidden; }
 .tour-head-card h2 { font-family: var(--display); font-size: 26px; text-transform: uppercase; }
 .tour-ico.has-logo { background: none; padding: 0; overflow: hidden; }
 .tour-ico.has-logo img { width: 100%; height: 100%; object-fit: contain; }
+.grp-sel { height: 30px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--surface); padding: 0 6px; font-size: 13px; font-weight: 600; }
+.col-picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.col-pick { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.col-pick input { width: 16px; height: 16px; accent-color: var(--accent-2); margin: 0; }
